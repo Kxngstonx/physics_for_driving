@@ -87,8 +87,14 @@ class MPPI:
         self.U[:, 0] = u_init
         self.g = torch.Generator(device=DEV).manual_seed(seed)
         self.w = dict(ey=1.0, epsi=50.0, v=0.5, du_d=2e4, du_t=W_DU_FORCE, off=1e4, bad=1e6, slow=200.0, prog=0.0)
-        if mode == "B":  # 경로·목표 속도 항을 끄고 전진 보상 (1 m 당 10, 출발값 [가정] — 튜닝의 λ 가 비용 중앙값으로 크기를 맞춤)
-            self.w.update(ey=0.0, epsi=0.0, v=0.0, prog=10.0)
+        self.off_margin = 1.5  # 경계에서 이만큼 안쪽을 넘으면 이탈 벌점 (원본 iac_sim 값)
+        if mode == "B":
+            # [변경 11/19] 경로·목표 속도 항을 끄고 전진 보상. 시작값은 Transformer-MPPI 레이싱 연구(arXiv 2412.17118)의 비율:
+            #   매 스텝 속도 보상 2·|v|, 트랙 이탈 10⁶. 속도 대신 '진행 방향 속도'(중심선을 따라 간 거리 ÷ DT) 를 써서
+            #   거꾸로·제자리로 돌면 보상이 없게 함 → 1 m 전진당 2/DT = 50. 그 연구의 중심선 이탈 벌점은 뺌(B 는 경로 없음).
+            #   이탈 판정: 차 중심이 경계에서 차 폭 절반(0.9 m, Golf 폭 약 1.8 m [가정: 일반 제원]) 안쪽을 넘을 때 = 차체가 경계 밖
+            self.w.update(ey=0.0, epsi=0.0, v=0.0, prog=2.0 / DT, off=1e6)
+            self.off_margin = 0.9
         if w:
             self.w.update(w)
 
@@ -118,7 +124,7 @@ class MPPI:
             dprog = torch.remainder(ix - ix_prev + self.tr.n // 2, self.tr.n) - self.tr.n // 2  # 진행한 중심선 점 수 (1 m 간격)
             epsi = wrap(P[:, 2] - self.tr.psi[ix])
             half = torch.where(ey > 0, self.tr.wl[ix], self.tr.wr[ix])
-            off = (ey.abs() > half - 1.5).float()
+            off = (ey.abs() > half - self.off_margin).float()
             du = u - up
             cost = cost + (self.w["ey"] * ey ** 2 + self.w["epsi"] * epsi ** 2 + self.w["v"] * (s_next[:, 0] - self.tr.vref[ix]) ** 2
                            + self.w["du_d"] * du[:, 1] ** 2 + self.w["du_t"] * du[:, 0] ** 2 + self.w["off"] * off + self.w["bad"] * bad.float()

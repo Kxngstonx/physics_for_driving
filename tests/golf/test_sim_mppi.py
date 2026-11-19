@@ -159,3 +159,46 @@ def test_episode_time_counted_without_record():
     tr = mppi.Track(TRACK)
     res, _ = mppi.episode(_Toy(), sim.World(), tr, K=64, N=5, max_time=0.4, use_graph=False, record=False)
     assert abs(res["time_s"] - 0.4) < 0.05, res["time_s"]
+
+
+def test_mode_b_reward_follows_forward_progress():
+    """[11/19] B 보상 = 진행 방향 속도. 트랙 반대 방향을 보고 달리면(거꾸로) 보상 대신 벌점."""
+    import math as _m
+    tr = mppi.Track(TRACK)
+    costs = []
+    for flip in (0.0, _m.pi):
+        m = mppi.MPPI(_Toy(), tr, K=128, N=10, seed=0, mode="B", use_graph=False)
+        m.s_now = torch.tensor([20.0, 0.0, 0.0], device=mppi.DEV)
+        pose = torch.tensor([float(tr.x[0]), float(tr.y[0]), float(tr.psi[0]) + flip], device=mppi.DEV)
+        hist = torch.tensor([20.0, 0.0, 0.0, 300.0, 0.0, 0.0], device=mppi.DEV).repeat(mppi.H - 1, 1)
+        m.act(hist, pose, 0, torch.tensor([300.0, 0.0], device=mppi.DEV))
+        costs.append(float(m.bcost.median()))
+    assert m.w["prog"] == 2.0 / mppi.DT and m.w["off"] == 1e6 and m.off_margin == 0.9
+    assert costs[0] < 0 < costs[1], costs
+
+
+def test_track_width_is_measured_value():
+    t = np.load(TRACK)
+    assert np.allclose(t["width_l"] + t["width_r"], 10.9)
+
+
+def test_tuning_select_groups_by_horizon(tmp_path=None):
+    import importlib.util, os, tempfile
+    spec = importlib.util.spec_from_file_location("tune_mppi", "experiments/golf/tune_mppi.py")
+    T = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(T)
+    d = tempfile.mkdtemp()
+    T.OUT, T.RES = os.path.join(d, "t.json"), d
+    T.steer_delay = lambda: 0.0
+    runs = []
+    for N, good in ((25, (0.3, 0.5)), (50, (1.0, 2.0))):
+        for lam in T.LAMS:
+            for nz in T.NOISE:
+                for R in T.RUNGS:
+                    fin = (lam, nz) == good
+                    runs.append(dict(mode="B", N=N, lam=lam, noise=nz, rung=R, finished=fin, lap_time=110.0 if fin else None,
+                                     progress_frac=1.0 if fin else 0.1))
+    T.save({"runs": runs})
+    T.select()
+    ch = T.load()["chosen"]
+    assert ch["B_25"] == dict(lam=0.3, noise=0.5) and ch["B_50"] == dict(lam=1.0, noise=2.0)

@@ -325,7 +325,7 @@ def stage_closed(res, key="closed", mppi_kw=None):
 
 def stage_closed_tuned(res):
     from deep_dynamics.golf import mppi
-    c = json.load(open(os.path.join(os.path.dirname(OUT), "mppi_tune.json")))["chosen"]["A"]
+    c = json.load(open(os.path.join(os.path.dirname(OUT), "mppi_tune.json")))["chosen"]["A_25"]
     stage_closed(res, key="closed_tuned", mppi_kw=dict(lam=c["lam"], sigma=tuple(c["noise"] * x for x in mppi.SIGMA_FORCE)))
 
 

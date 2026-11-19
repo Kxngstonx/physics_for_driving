@@ -1,7 +1,8 @@
 """썬더힐 West 트랙: 근사 경계, 경로 3종, 목표 속도 (docs/experiment_plan_golf.md 9-3, 9-5절).
 
   기준선   : 20개 주행 중 평균 속도가 가장 빠른 완전한 한 바퀴의 GPS 궤적 (1 m 재표본, 평활)
-  경계    : 기준선 ± 고정 폭 (기본 총 10 m, 가정값. --width 로 바꿈) — 11/18 사용자 결정.
+  경계    : 기준선 ± 고정 폭. [변경 11/19] 기본 총 10.9 m = 사용자가 위성 지도로 잰 14곳 평균
+            (docs/track_width_measurement_thunderhill.pdf, 최소 10.1 / 최대 11.6 m). 이전은 근거 없는 가정 10 m.
              문서 9-5 의 'GPS 궤적 범위' 경계는 폭이 중앙값 1.2 m (최소 0.15 m) 로 나와 쓰지 않음:
              자동 운전이 같은 선을 반복하고 사람 구간도 95% 가 기준선 0.85 m 안이라 궤적으로는 트랙 폭을 알 수 없음.
              궤적 범위는 참고용으로 thunderhill_info.json 의 gps_envelope 에 남긴다
@@ -182,7 +183,7 @@ def make_path(ref, left, right, bank, offs, name, ds=1.0, mu=MU0, ax_acc=AX_ACC0
                 mu=mu, ax_acc=ax_acc, ax_dec=ax_dec)
 
 
-def build_all(runs=None, out_dir=None, mu=MU0, ax_acc=AX_ACC0, ax_dec=AX_DEC0, width=10.0):
+def build_all(runs=None, out_dir=None, mu=MU0, ax_acc=AX_ACC0, ax_dec=AX_DEC0, width=10.9):
     runs = runs or D.available()
     lap = best_lap(runs)
     ref = resample_closed(np.stack([lap["x"], lap["y"]], 1), 1.0)
@@ -220,7 +221,7 @@ def build_all(runs=None, out_dir=None, mu=MU0, ax_acc=AX_ACC0, ax_dec=AX_DEC0, w
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="experiments/golf/results/tracks")
-    ap.add_argument("--width", type=float, default=10.0, help="트랙 총 폭 (m), 가정값")
+    ap.add_argument("--width", type=float, default=10.9, help="트랙 총 폭 (m). 기본 = 위성 지도 측정 평균")
     a = ap.parse_args()
     _, info, _ = build_all(out_dir=a.out, width=a.width)
     print(json.dumps(info, indent=1, ensure_ascii=False))
