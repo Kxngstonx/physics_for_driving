@@ -8,5 +8,7 @@ build/
 # 다시 만드는 순서: docs/golf_results_phase1.md 10절, docs/golf_results_phase2.md 10절
 experiments/golf/results/
 experiments/results/
+# 회의용 영상 (experiments/golf/viz2d.py, record_race.py 로 다시 만듦)
+docs/videos/
 # 외부에서 받은 참조 차량 데이터 (AV-21, GTI). 받는 곳은 docs/experiment_plan_golf.md 13·14절
 deep_dynamics/reference_vehicles/
