@@ -56,7 +56,7 @@ def test_drive_force_gives_expected_acceleration_and_is_not_clipped():
 
 
 def test_brake_force_is_front_share_of_total():
-    """Fxf < 0 은 앞바퀴 제동력 → 전체 제동력 = Fxf / 0.658."""
+    """Fxf < 0 은 앞바퀴 제동력 → 전체 제동력 = Fxf / 앞 제동 몫(0.75)."""
     v0, F = 25.0, -3000.0
     _, s = _run(v0, F)
     a = s[0] - v0

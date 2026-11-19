@@ -13,7 +13,7 @@
 
 입력 변환 (패키지 식: 입력 가속도 a → 엔진 토크 m·R_w·a·T_se 또는 브레이크 토크 m·R_w·a·T_sb):
   앞바퀴 힘 Fxf ≥ 0 → a = Fxf / m        (T_se = 1, 앞바퀴굴림)
-  앞바퀴 힘 Fxf < 0 → a = Fxf / (T_sb·m)  (T_sb = 0.658, 측정한 앞 제동 몫. 나머지는 뒷바퀴 브레이크)
+  앞바퀴 힘 Fxf < 0 → a = Fxf / (T_sb·m)  (T_sb = 0.75, 주행 중 앞 제동 몫. 나머지는 뒷바퀴 브레이크)
 Escort 의 가속·최고 속도·조향 속도 제한은 Golf 보다 약해서 푼다. 엔진 한계는 속도별 구동력 표(force_cap)로 준다.
 """
 import collections
