@@ -31,3 +31,23 @@ MPPI 비용의 이탈 벌점 여유(A 1.5 m, B 0.9 m, 경계 안쪽 기준)는 �
 
 `tests/golf/test_grade.py`: 경사 0 을 넣은 경사 모델 = 경사 없는 모델(R1·R3, 같은 계수), 오르막이면 vx 가 더 줄어듦, 데이터 열 모양, MPPI 가 경사 모델로 돈다, 이탈 기준 0.9 m.
 `run_all.py` 의 사다리·파이프라인·학습 규칙 시험도 통과 (시뮬레이터 시험은 `results/specs.json` 등 로컬 결과 파일이 있어야 돈다).
+
+## 4. 노면 비교·GTI 차량 간 실험 (코드만, 학습은 나중에)
+
+`experiments/golf/run_road_gti.py` (우리 저장소 실험 ①·②·④·⑤를 팀 기준으로 옮김). GTI 로더는 `deep_dynamics/golf/data_gti.py`.
+
+| 실험 | 설정 | 학습 데이터 |
+|---|---|---|
+| road_none | GOLF_THUNDERHILL | Golf, 노면 0 |
+| road_bank | GOLF_THUNDERHILL | Golf, 데이터 bank_rad 열 (= 팀원 main. `results/models` main 모델이 있으면 eval 이 그대로 씀) |
+| road_grade | GOLF_THUNDERHILL_G | Golf, 경사 (bank 0) |
+| grade_gti | GOLF_THUNDERHILL_G | Golf + GTI 학습 6개 파일 (15.4분, 힘은 Golf 기준 환산: 구동 ×m_Golf/m_GTI, 제동 ×(0.75·m_Golf)/(0.66·m_GTI)) |
+
+평가: Golf 시험(팀원 분할) + GTI 시험(exp_5·9, 처음 보는 차). 1초 롤아웃 vx·vy·r, vy·r 정규화 오차, "GTI 시험 / Golf 시험 − 1" (물리 비중별 일반화).
+
+```
+python experiments/golf/run_road_gti.py list
+python experiments/golf/run_road_gti.py train-all                 # 4 실험 × R1–R6 × 시드 0·1·2 (road_bank 는 main 모델이 있으면 빼도 됨: --exps road_none road_grade grade_gti)
+python experiments/golf/run_road_gti.py eval                      # → results/road_gti/eval.md
+```
+GTI 데이터: `deep_dynamics/reference_vehicles/gti/exp_*.npz` (11개). GTI 시험은 노면 정보가 없어(0) 차 차이와 코스·노면 차이가 섞여 있다.

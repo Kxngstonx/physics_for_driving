@@ -134,8 +134,9 @@ def load_run(name, data_dir=DATA_DIR, min_len=MIN_LEN, v_stop=V_STOP, road="bank
     """한 주행 → 끊김 없는 구간 리스트 (25 Hz). 같은 프로세스 안에서는 한 번만 만든다 (반환값을 고치지 말 것).
     구간 dict: run, t, x, y, psi, s_m, s (T,3) [vx,vy,r], u (T,3) [Fxf, delta, bank], extra(dict).
     vx < v_stop 인 곳에서 자른다 (필터를 먼저 걸고 자름: 자른 조각마다 걸면 끝부분이 흔들림).
-    road: 'bank' (이전, 데이터 bank_rad 열) | 'grade' ([11/19] u (T,4) [Fxf, delta, bank=0, grade], 경사는 트랙 지도에서)"""
-    assert road in ("bank", "grade")
+    road: 'bank' (이전, 데이터 bank_rad 열) | 'grade' ([11/19] u (T,4) [Fxf, delta, bank=0, grade], 경사는 트랙 지도에서)
+          | 'none' (노면 없음: bank=0, 노면 비교 실험용)"""
+    assert road in ("bank", "grade", "none")
     segs = []
     for filt, ex in _filtered(name, data_dir):
         edges = np.flatnonzero(np.diff(np.r_[0, (filt[:, 0] >= v_stop).astype(int), 0]))
@@ -144,8 +145,9 @@ def load_run(name, data_dir=DATA_DIR, min_len=MIN_LEN, v_stop=V_STOP, road="bank
                 continue
             exs = {c: v[k:j] for c, v in ex.items()}
             u = filt[k:j, 3:].copy()
-            if road == "grade":  # 좌우 기울기 0 (시뮬레이터·MPPI 와 같은 평평한 길), 경사 열 추가
+            if road in ("grade", "none"):  # 좌우 기울기 0 (시뮬레이터·MPPI 와 같은 평평한 길)
                 u[:, 2] = 0.0
+            if road == "grade":  # 경사 열 추가
                 u = np.c_[u, grade_at(exs["posE_m"], exs["posN_m"])]
             segs.append(dict(run=name, t=exs["t_s"], x=exs["posE_m"], y=exs["posN_m"], psi=exs["yawAngle_rad"],
                              s_m=exs["s_m"], s=filt[k:j, :3].copy(), u=u, extra=exs))
@@ -172,5 +174,5 @@ def get_split(data_dir=DATA_DIR):
 def split_segs(names, data_dir=DATA_DIR, v_stop=V_STOP, road="bank"):
     """[(s, u), ...] — ladder train.windows() 입력 형식.
     v_stop: 이 속도 미만 구간을 잘라 냄. 기본 V_STOP (정지만 제외). V_LAUNCH = 출발 구간 제외 ablation.
-    road: 'bank' (이전) | 'grade' (경사 채널, configs.road_of(cfg))"""
+    road: 'bank' (이전) | 'grade' (경사 채널, configs.road_of(cfg)) | 'none' (노면 0)"""
     return [(sg["s"], sg["u"]) for n in names for sg in load_run(n, data_dir, v_stop=v_stop, road=road)]
