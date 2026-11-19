@@ -1,0 +1,3 @@
+*_[0-9]*.npz
+# Golf 원본 CSV (약 420 MB). purl.stanford.edu/hh613qz0317 에서 받음 — 저장소에 넣지 않음
+golf/*.csv

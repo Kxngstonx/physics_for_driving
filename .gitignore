@@ -1,0 +1,12 @@
+__pycache__/
+*.pth
+build/
+*.egg-info
+*.pkl
+
+# Golf 실험 (11/19): 재현 가능한 결과는 커밋하지 않는다 — 모델·로그·평가·중간 계산값·실행 상태.
+# 다시 만드는 순서: docs/golf_results_phase1.md 10절, docs/golf_results_phase2.md 10절
+experiments/golf/results/
+experiments/results/
+# 외부에서 받은 참조 차량 데이터 (AV-21, GTI). 받는 곳은 docs/experiment_plan_golf.md 13·14절
+deep_dynamics/reference_vehicles/

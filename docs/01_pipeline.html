@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Deep Dynamics 파이프라인 소개</title>
+<style>
+/* Layout: one reading column (max 940px); figures span the column, prose is held to ~68ch. */
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --fg: #18202b; --fg-2: #46515f; --muted: #6a7482;
+  --line: #dfe3e9; --line-strong: #b9c0cb;
+  --accent: #2563c9; --accent-soft: #e4edfb;
+  --warn: #c2570c; --warn-soft: #fbeadc;
+  --test: #0f8a7a; --test-soft: #dcf3ef;
+  --discard: #c5cbd4; --code-bg: #eef0f4;
+  --sans: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10151c; --panel: #171d26; --fg: #e6eaf0; --fg-2: #b4bdc9; --muted: #8c96a4;
+    --line: #2a323e; --line-strong: #465060;
+    --accent: #5b8fe8; --accent-soft: #1b2a45;
+    --warn: #d2772f; --warn-soft: #3a2616;
+    --test: #33a391; --test-soft: #14312d;
+    --discard: #3d4654; --code-bg: #1f2631;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10151c; --panel: #171d26; --fg: #e6eaf0; --fg-2: #b4bdc9; --muted: #8c96a4;
+  --line: #2a323e; --line-strong: #465060;
+  --accent: #5b8fe8; --accent-soft: #1b2a45;
+  --warn: #d2772f; --warn-soft: #3a2616;
+  --test: #33a391; --test-soft: #14312d;
+  --discard: #3d4654; --code-bg: #1f2631;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.75 var(--sans); word-break: keep-all; overflow-wrap: anywhere;
+}
+.page {
+  max-width: 940px; margin: 0 auto; padding-block: 40px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+header.top { border-bottom: 2px solid var(--fg); padding-bottom: 20px; margin-bottom: 28px; }
+.eyebrow { font: 600 12px/1.4 var(--mono); letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+h1 { font-size: 34px; line-height: 1.25; margin: 8px 0 12px; letter-spacing: -.02em; text-wrap: balance; }
+h2 { font-size: 24px; line-height: 1.3; margin: 64px 0 8px; padding-top: 20px; border-top: 1px solid var(--line-strong); letter-spacing: -.01em; text-wrap: balance; }
+h3 { font-size: 18px; line-height: 1.4; margin: 40px 0 6px; text-wrap: balance; }
+h4 { font-size: 15px; margin: 22px 0 4px; }
+p, ul, ol { max-width: 68ch; margin: 10px 0; }
+ul, ol { padding-left: 1.3em; }
+li { margin: 4px 0; }
+.lead { font-size: 17px; color: var(--fg-2); }
+a { color: var(--accent); }
+code { font: 0.86em var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font: 13px/1.6 var(--mono); max-width: 100%; }
+pre code { background: none; padding: 0; font-size: inherit; }
+.hl { color: var(--warn); font-weight: 700; }
+nav.toc { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 32px; font-size: 14.5px; }
+nav.parts { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 0 0 18px; font-size: 14px; }
+nav.parts a { text-decoration: none; padding: 5px 11px; border: 1px solid var(--line-strong); border-radius: 6px; color: var(--fg-2); }
+nav.parts a[aria-current="page"] { background: var(--fg); color: var(--bg); border-color: var(--fg); font-weight: 600; }
+a.sev { text-decoration: none; }
+nav.toc div { font-weight: 700; margin-top: 8px; }
+nav.toc a { text-decoration: none; display: block; }
+nav.toc a:hover, a:focus-visible { text-decoration: underline; }
+figure { margin: 22px 0 26px; }
+.fig { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow-x: auto; }
+.fig svg { display: block; width: 100%; min-width: 660px; height: auto; font-family: var(--sans); }
+.fig svg.narrow { min-width: 520px; max-width: 680px; margin: 0 auto; }
+figcaption { font-size: 13.5px; line-height: 1.6; color: var(--fg-2); margin-top: 8px; max-width: 78ch; }
+figcaption b { color: var(--fg); }
+.tw { overflow-x: auto; margin: 14px 0 20px; }
+table { border-collapse: collapse; width: 100%; min-width: 600px; overflow-wrap: normal; font-size: 14px; line-height: 1.55; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12.5px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+td.n, th.n { text-align: right; white-space: nowrap; }
+.tw.nw td:first-child, td code { white-space: nowrap; }
+.issue { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 4px 20px 14px; margin: 18px 0; }
+.issue dl { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 6px 14px; margin: 10px 0 0; font-size: 15px; }
+.issue dt { color: var(--muted); font-size: 13px; font-weight: 600; padding-top: 2px; }
+.issue dd { margin: 0; }
+.sev { display: inline-block; font: 600 11.5px/1 var(--sans); padding: 4px 7px; border-radius: 4px; vertical-align: 2px; margin-left: 6px; white-space: nowrap; }
+.sev.hi { background: var(--warn-soft); color: var(--warn); }
+.sev.mid { background: var(--accent-soft); color: var(--accent); }
+.sev.lo { background: var(--code-bg); color: var(--fg-2); }
+.note { border-left: 3px solid var(--line-strong); padding: 2px 0 2px 14px; color: var(--fg-2); font-size: 14.5px; max-width: 72ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--fg-2); margin: 0 0 10px; }
+.legend span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--sw); }
+/* SVG vocabulary */
+.bx { fill: var(--panel); stroke: var(--line-strong); stroke-width: 1.2; }
+.bx-a { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+.bx-w { fill: var(--warn-soft); stroke: var(--warn); stroke-width: 1.2; }
+.bx-d { fill: var(--code-bg); stroke: var(--line-strong); stroke-width: 1.2; }
+.t { fill: var(--fg); font-size: 13px; font-weight: 600; }
+.s { fill: var(--muted); font-size: 11.5px; }
+.k { fill: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; }
+.mo { font-family: var(--mono); }
+.ta { fill: var(--accent); font-size: 12px; font-weight: 700; }
+.tw2 { fill: var(--warn); font-size: 12px; font-weight: 700; }
+.ar { stroke: var(--fg-2); stroke-width: 1.4; fill: none; }
+.ar-a { stroke: var(--accent); stroke-width: 2; fill: none; }
+.ar-w { stroke: var(--warn); stroke-width: 2; fill: none; }
+.ah { fill: var(--fg-2); } .ah-a { fill: var(--accent); } .ah-w { fill: var(--warn); }
+.dash { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 4; fill: none; }
+.grid { stroke: var(--line); stroke-width: 1; }
+.c-train { fill: var(--accent); } .c-val { fill: var(--warn); } .c-test { fill: var(--test); }
+.c-gap { fill: none; stroke: var(--muted); stroke-dasharray: 2 2; }
+.f-used { fill: var(--accent); } .f-disc { fill: var(--discard); }
+.z-used { fill: var(--accent-soft); } .z-disc { fill: var(--code-bg); }
+.ln { stroke: var(--fg); stroke-width: 1.5; fill: none; }
+.sd { fill: var(--fg); stroke: var(--panel); stroke-width: 1.5; }
+.dot { fill: var(--muted); } .dot-a { fill: var(--accent); }
+@media (max-width: 560px) { h1 { font-size: 27px; } h2 { font-size: 21px; } .issue dl { grid-template-columns: 1fr; gap: 2px; } .issue dt { margin-top: 8px; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="ah-a" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="ah-w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="ah-w" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+</svg>
+
+<div class="page">
+<header class="top">
+  <nav class="parts" aria-label="문서 이동"><a href="01_pipeline.html" aria-current="page">1부. 파이프라인 소개</a> <a href="02_issues.html">2부. 그대로 쓸 때의 문제</a> <a href="03_results.html">3부. 수정 내용과 재현 결과</a></nav>
+  <div class="eyebrow">linklab-uva/deep-dynamics · commit 88c8565 기준</div>
+  <h1>Deep Dynamics 파이프라인 소개</h1>
+  <p class="lead">Deep Dynamics 저장소(clone 직후 상태)의 구조와 각 모듈을 그림으로 설명합니다.</p>
+  <nav class="toc" aria-label="목차">
+    <section>
+      <a href="#overview">1. 개요와 저장소 구조</a>
+      <a href="#pipeline">2. 전체 파이프라인 구조도</a>
+      <a href="#modules">3. 모듈별 설명</a>
+      <a href="#mpc" style="padding-left:14px">3.8 MPC 폐루프 시뮬레이션 mpc/</a>
+      <a href="#realgap" style="padding-left:14px">3.9 실제 차량과 이 시뮬레이션의 차이</a>
+      <a href="#configs">4. 설정 파일</a>
+      <a href="#run">5. 실행 순서</a>
+    </section>
+  </nav>
+</header>
+
+<!-- ============================ PART 1 ============================ -->
+<h2 id="overview">1. 개요와 저장소 구조</h2>
+<p>Deep Dynamics는 물리 모델과 신경망을 결합한 차량 동역학 모델입니다. 신경망이 차량 상태를 직접 예측하지 않고, 타이어(Pacejka)·구동계·관성 <b>계수</b>를 추정합니다. 추정된 계수는 단일 트랙(bicycle) 모델에 들어가고, 이 물리식을 한 스텝 적분한 결과가 다음 시점의 종방향 속도 v<sub>x</sub>, 횡방향 속도 v<sub>y</sub>, 요레이트 ω입니다.</p>
+<p>계수는 Physics Guard 층에서 물리적으로 가능한 범위 안으로 제한됩니다. 비교 기준선인 Deep Pacejka 모델은 같은 구조에서 이 제한이 없고, 구동력 F<sub>rx</sub>를 신경망이 직접 출력합니다.</p>
+<p>데이터는 두 종류입니다. 1:43 스케일 차량 시뮬레이터 Bayesrace의 합성 데이터(샘플링 0.02초)와, Indy Autonomous Challenge의 실차 AV-21 주행 로그(0.04초)입니다.</p>
+
+<div class="tw nw"><table>
+<thead><tr><th>경로</th><th>내용</th></tr></thead>
+<tbody>
+<tr><td><code>deep_dynamics/cfgs/model/</code></td><td>모델 설정 YAML 4개 (Deep Dynamics / Deep Pacejka × Bayesrace / IAC)</td></tr>
+<tr><td><code>deep_dynamics/data/</code></td><td>원시 데이터. Bayesrace <code>.npz</code> 2개, AV-21 <code>.csv</code> 5개. 변환된 <code>*_{H}.npz</code>는 포함되어 있지 않아 직접 만들어야 함</td></tr>
+<tr><td><code>deep_dynamics/tools/</code></td><td>변환기: <code>bayesrace_parser.py</code>, <code>csv_parser.py</code>, <code>rosbag_data_convert.py</code></td></tr>
+<tr><td><code>deep_dynamics/model/</code></td><td><code>models.py</code>(데이터셋·모델·물리식), <code>build_network.py</code>, <code>train.py</code>, <code>evaluate.py</code>, <code>tune_hyperparameters.py</code>, <code>test_hyperparameters.py</code></td></tr>
+<tr><td><code>deep_dynamics/visualize/</code></td><td>예측 궤적·오차·타이어 곡선 그림 스크립트 7개, 트랙 경계 CSV</td></tr>
+<tr><td><code>deep_dynamics/mpc/</code></td><td>학습된 모델을 Bayesrace NMPC에 넣어 폐루프로 주행시키는 스크립트 2개</td></tr>
+</tbody></table></div>
+
+<h2 id="pipeline">2. 전체 파이프라인 구조도</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 920 430" role="img" aria-label="원시 데이터가 변환기를 거쳐 npz 데이터셋이 되고, 데이터 로더, 신경망, Physics Guard, 단일 트랙 모델, 손실 계산을 거쳐 체크포인트가 저장되며, 체크포인트는 평가, 시각화, MPC에 쓰인다.">
+  <text class="k" x="20" y="26">데이터 준비</text>
+  <rect class="bx" x="20" y="40" width="180" height="44" rx="6"/><text class="t" x="110" y="59" text-anchor="middle">Bayesrace 시뮬레이션</text><text class="s mo" x="110" y="75" text-anchor="middle">DYN-PP-ETHZ*.npz</text>
+  <rect class="bx" x="250" y="40" width="180" height="44" rx="6"/><text class="t mo" x="340" y="67" text-anchor="middle">bayesrace_parser.py</text>
+  <rect class="bx" x="20" y="104" width="110" height="44" rx="6"/><text class="t" x="75" y="131" text-anchor="middle">AV-21 rosbag</text>
+  <rect class="bx" x="160" y="104" width="180" height="44" rx="6"/><text class="t mo" x="250" y="131" text-anchor="middle">rosbag_data_convert.py</text>
+  <rect class="bx" x="370" y="104" width="80" height="44" rx="6"/><text class="t" x="410" y="131" text-anchor="middle">CSV 5개</text>
+  <rect class="bx" x="480" y="104" width="130" height="44" rx="6"/><text class="t mo" x="545" y="131" text-anchor="middle">csv_parser.py</text>
+  <rect class="bx-a" x="690" y="62" width="210" height="64" rx="6"/><text class="t mo" x="795" y="84" text-anchor="middle">{name}_{H}.npz</text><text class="s" x="795" y="101" text-anchor="middle">features (N, H, 8)</text><text class="s" x="795" y="116" text-anchor="middle">labels (N, 3)</text>
+  <path class="ar" d="M200,62 H248" marker-end="url(#ah)"/>
+  <path class="ar" d="M430,62 L688,80" marker-end="url(#ah)"/>
+  <path class="ar" d="M130,126 H158" marker-end="url(#ah)"/><path class="ar" d="M340,126 H368" marker-end="url(#ah)"/><path class="ar" d="M450,126 H478" marker-end="url(#ah)"/>
+  <path class="ar" d="M610,126 L688,110" marker-end="url(#ah)"/>
+
+  <path class="ar" d="M795,126 V172 H105 V203" marker-end="url(#ah)"/>
+  <text class="k" x="220" y="194">학습</text>
+  <rect class="bx" x="20" y="205" width="170" height="60" rx="6"/><text class="t" x="105" y="230" text-anchor="middle">Dataset · DataLoader</text><text class="s" x="105" y="248" text-anchor="middle">정규화, 80:20 분할</text>
+  <rect class="bx" x="220" y="205" width="140" height="60" rx="6"/><text class="t" x="290" y="230" text-anchor="middle">GRU + Dense</text><text class="s mo" x="290" y="248" text-anchor="middle">build_network.py</text>
+  <rect class="bx-a" x="390" y="205" width="170" height="60" rx="6"/><text class="t" x="475" y="230" text-anchor="middle">Physics Guard</text><text class="s" x="475" y="248" text-anchor="middle">계수 17개를 범위 안으로</text>
+  <rect class="bx-a" x="590" y="205" width="140" height="60" rx="6"/><text class="t" x="660" y="230" text-anchor="middle">단일 트랙 모델</text><text class="s" x="660" y="248" text-anchor="middle">Euler 1스텝</text>
+  <rect class="bx" x="760" y="205" width="140" height="60" rx="6"/><text class="t" x="830" y="230" text-anchor="middle">MSE · Adam</text><text class="s mo" x="830" y="248" text-anchor="middle">train.py</text>
+  <path class="ar" d="M190,235 H218" marker-end="url(#ah)"/><path class="ar" d="M360,235 H388" marker-end="url(#ah)"/><path class="ar" d="M560,235 H588" marker-end="url(#ah)"/><path class="ar" d="M730,235 H758" marker-end="url(#ah)"/>
+  <path class="ar" d="M800,265 V290 H290 V267" marker-end="url(#ah)"/><text class="s" x="545" y="305" text-anchor="middle">역전파: 물리식을 거쳐 신경망 가중치까지</text>
+
+  <path class="ar" d="M870,265 V333" marker-end="url(#ah)"/>
+  <text class="k" x="40" y="326">평가 · 활용</text>
+  <rect class="bx" x="730" y="335" width="170" height="50" rx="6"/><text class="t" x="815" y="356" text-anchor="middle">체크포인트</text><text class="s mo" x="815" y="373" text-anchor="middle">epoch_N.pth, scaler.pkl</text>
+  <rect class="bx" x="500" y="335" width="170" height="50" rx="6"/><text class="t mo" x="585" y="356" text-anchor="middle">evaluate.py</text><text class="s" x="585" y="373" text-anchor="middle">RMSE, 최대 오차</text>
+  <rect class="bx" x="270" y="335" width="170" height="50" rx="6"/><text class="t mo" x="355" y="356" text-anchor="middle">visualize/</text><text class="s" x="355" y="373" text-anchor="middle">H스텝 롤아웃 ADE · FDE</text>
+  <rect class="bx" x="40" y="335" width="170" height="50" rx="6"/><text class="t mo" x="125" y="356" text-anchor="middle">mpc/</text><text class="s" x="125" y="373" text-anchor="middle">NMPC 폐루프 주행</text>
+  <path class="ar" d="M815,385 V408 H125 V387" marker-end="url(#ah)"/><path class="ar" d="M585,408 V387" marker-end="url(#ah)"/><path class="ar" d="M355,408 V387" marker-end="url(#ah)"/>
+</svg>
+</div>
+<figcaption><b>Figure 1. 전체 파이프라인.</b> 파란 상자가 이 방법의 핵심입니다. 신경망 출력은 계수이고, 손실은 물리식을 통과한 뒤의 상태 예측에서 계산됩니다. 체크포인트 옆의 <code>scaler.pkl</code>은 평가 때 같은 정규화를 쓰기 위해 반드시 함께 있어야 합니다.</figcaption>
+</figure>
+
+<h2 id="modules">3. 모듈별 설명</h2>
+
+<h3>3.1 데이터 변환기 <code>tools/</code></h3>
+<p>변환기는 시계열을 길이 H의 윈도로 잘라 학습 샘플을 만듭니다. 윈도는 한 스텝씩 밀리며(stride 1), 윈도 바로 다음 시점의 (v<sub>x</sub>, v<sub>y</sub>, ω)가 라벨입니다. H는 설정 파일의 <code>HORIZON</code>과 같아야 합니다.</p>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 900 200" role="img" aria-label="시간축 위에서 길이 5의 입력 윈도와 그 다음 시점의 라벨이 한 칸씩 이동하며 샘플이 만들어지는 모습">
+  <text class="s" x="92" y="57" text-anchor="end">원본 시계열</text>
+  <g class="bx-d">
+    <rect x="100" y="40" width="28" height="26"/><rect x="130" y="40" width="28" height="26"/><rect x="160" y="40" width="28" height="26"/><rect x="190" y="40" width="28" height="26"/><rect x="220" y="40" width="28" height="26"/><rect x="250" y="40" width="28" height="26"/><rect x="280" y="40" width="28" height="26"/><rect x="310" y="40" width="28" height="26"/><rect x="340" y="40" width="28" height="26"/><rect x="370" y="40" width="28" height="26"/><rect x="400" y="40" width="28" height="26"/><rect x="430" y="40" width="28" height="26"/><rect x="460" y="40" width="28" height="26"/><rect x="490" y="40" width="28" height="26"/><rect x="520" y="40" width="28" height="26"/><rect x="550" y="40" width="28" height="26"/>
+  </g>
+  <text class="s mo" x="204" y="30" text-anchor="middle">t</text><text class="s mo" x="354" y="30" text-anchor="middle">t+H</text>
+  <path class="ar" d="M590,53 H640" marker-end="url(#ah)"/><text class="s" x="648" y="57">시간</text>
+
+  <text class="s" x="92" y="107" text-anchor="end">윈도 i</text>
+  <rect class="c-train" x="190" y="90" width="148" height="26" rx="3"/><rect class="c-val" x="340" y="90" width="28" height="26" rx="3"/>
+  <text class="s" x="92" y="141" text-anchor="end">윈도 i+1</text>
+  <rect class="c-train" x="220" y="124" width="148" height="26" rx="3"/><rect class="c-val" x="370" y="124" width="28" height="26" rx="3"/>
+  <text class="s" x="92" y="175" text-anchor="end">윈도 i+2</text>
+  <rect class="c-train" x="250" y="158" width="148" height="26" rx="3"/><rect class="c-val" x="400" y="158" width="28" height="26" rx="3"/>
+
+  <rect class="c-train" x="660" y="94" width="14" height="14" rx="2"/><text class="t" x="682" y="106">입력: H스텝 × 8열</text>
+  <rect class="c-val" x="660" y="126" width="14" height="14" rx="2"/><text class="t" x="682" y="138">라벨: (vx, vy, ω)</text>
+  <text class="s" x="660" y="170">이웃한 윈도는 H−1 스텝을 공유</text>
+</svg>
+</div>
+<figcaption><b>Figure 2. 슬라이딩 윈도.</b> 그림은 H=5로 그렸습니다. 실제 설정은 Bayesrace가 5 또는 10, AV-21이 15 또는 16입니다. 이웃 윈도가 거의 같은 내용을 담는다는 점이 2부의 분할 문제(P2)로 이어집니다.</figcaption>
+</figure>
+
+<div class="tw"><table>
+<thead><tr><th class="n">열</th><th>이름</th><th>Bayesrace (<code>bayesrace_parser.py</code>)</th><th>AV-21 (<code>csv_parser.py</code>)</th></tr></thead>
+<tbody>
+<tr><td class="n">0–2</td><td>VX, VY, YAW_RATE</td><td>시뮬레이터 상태</td><td>CSV의 <code>vx</code>, <code>vy</code>, <code>omega</code></td></tr>
+<tr><td class="n">3</td><td>THROTTLE_FB</td><td>직전 스텝의 PWM 입력</td><td><code>throttle_ped_cmd</code>/100, 제동 중이면 −<code>brake_ped_cmd</code>/2757.9</td></tr>
+<tr><td class="n">4</td><td>STEERING_FB</td><td>직전 스텝의 조향 입력</td><td>CSV의 <code>delta</code> (측정 조향각)</td></tr>
+<tr><td class="n">5–6</td><td>THROTTLE_CMD, STEERING_CMD</td><td>입력의 스텝 간 변화량</td><td>위 FB 값의 스텝 간 변화량</td></tr>
+<tr><td class="n">7</td><td>VREF</td><td>제어기의 목표 속도</td><td>5스텝 뒤의 <code>vx</code> (2부 참고)</td></tr>
+</tbody></table></div>
+<p><code>rosbag_data_convert.py</code>는 ROS 2 bag을 0.04초 간격 CSV로 바꾸는 스크립트입니다. 저장소에는 이미 변환된 CSV가 들어 있으므로 기본 흐름에서는 쓰이지 않습니다.</p>
+
+<h3>3.2 Dataset과 DataLoader <code>model/models.py</code>, <code>model/train.py</code></h3>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 900 180" role="img" aria-label="npz의 features에서 모델별로 열을 고르고, 전체 데이터로 StandardScaler를 맞춘 뒤, 무작위로 80 대 20으로 나누어 학습 로더와 검증 로더를 만든다.">
+  <rect class="bx" x="20" y="60" width="150" height="60" rx="6"/><text class="t" x="95" y="85" text-anchor="middle">features (N, H, 8)</text><text class="s" x="95" y="103" text-anchor="middle">labels (N, 3)</text>
+  <rect class="bx" x="200" y="52" width="180" height="76" rx="6"/><text class="t" x="290" y="74" text-anchor="middle">열 선택</text><text class="s" x="290" y="93" text-anchor="middle">Deep Dynamics: 0–6열</text><text class="s" x="290" y="110" text-anchor="middle">Deep Pacejka: 3, 5열 제외</text>
+  <rect class="bx" x="410" y="60" width="150" height="60" rx="6"/><text class="t" x="485" y="85" text-anchor="middle">StandardScaler</text><text class="s" x="485" y="103" text-anchor="middle">전체 데이터로 fit</text>
+  <rect class="bx-w" x="590" y="60" width="140" height="60" rx="6"/><text class="t mo" x="660" y="85" text-anchor="middle">random_split</text><text class="s" x="660" y="103" text-anchor="middle">80 : 20, seed 0</text>
+  <rect class="bx" x="770" y="20" width="120" height="56" rx="6"/><text class="t" x="830" y="43" text-anchor="middle">학습 로더</text><text class="s" x="830" y="61" text-anchor="middle">shuffle, drop_last</text>
+  <rect class="bx" x="770" y="104" width="120" height="56" rx="6"/><text class="t" x="830" y="127" text-anchor="middle">검증 로더</text><text class="s" x="830" y="145" text-anchor="middle">순서 유지</text>
+  <path class="ar" d="M170,90 H198" marker-end="url(#ah)"/><path class="ar" d="M380,90 H408" marker-end="url(#ah)"/><path class="ar" d="M560,90 H588" marker-end="url(#ah)"/>
+  <path class="ar" d="M730,80 L768,54" marker-end="url(#ah)"/><path class="ar" d="M730,100 L768,126" marker-end="url(#ah)"/>
+</svg>
+</div>
+<figcaption><b>Figure 3. 데이터셋 구성.</b> 샘플 하나는 <code>(x_raw, y, x_norm)</code> 세 값입니다. 정규화된 <code>x_norm</code>은 신경망에, 원본 <code>x_raw</code>는 물리식에 들어갑니다. 주황색 상자의 무작위 분할이 2부 P2의 원인입니다. 코드: <code>models.py:16-52</code>, <code>train.py:139-141</code>.</figcaption>
+</figure>
+
+<h3>3.3 신경망 <code>model/build_network.py</code>, <code>ModelBase</code></h3>
+<p>층 구성은 YAML의 <code>MODEL.LAYERS</code>에서 만들어집니다. 첫 층이 GRU이면 hidden 크기가 H로 고정되고, 출력 (B, H, H)를 펼쳐 H² 차원 벡터로 만든 뒤 Dense+Mish 층에 넣습니다. 그래서 YAML에 적는 GRU의 <code>OUT_FEATURES</code>는 반드시 H²이어야 합니다(예: H=15이면 225).</p>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 940 210" role="img" aria-label="정규화된 입력은 GRU, Flatten, Dense 층, 출력 헤드를 거쳐 계수가 되고, 원본 입력의 마지막 스텝과 계수가 동역학 스텝에 들어가 다음 상태 예측이 나온다.">
+  <rect class="bx" x="20" y="24" width="130" height="56" rx="6"/><text class="t mo" x="85" y="47" text-anchor="middle">x_norm</text><text class="s" x="85" y="65" text-anchor="middle">(B, H, 7) 정규화</text>
+  <rect class="bx" x="180" y="24" width="130" height="56" rx="6"/><text class="t" x="245" y="47" text-anchor="middle">GRU</text><text class="s" x="245" y="65" text-anchor="middle">hidden = H</text>
+  <rect class="bx" x="340" y="24" width="110" height="56" rx="6"/><text class="t" x="395" y="47" text-anchor="middle">Flatten</text><text class="s" x="395" y="65" text-anchor="middle">H² 차원</text>
+  <rect class="bx" x="480" y="24" width="130" height="56" rx="6"/><text class="t" x="545" y="47" text-anchor="middle">Dense + Mish</text><text class="s" x="545" y="65" text-anchor="middle">× k층</text>
+  <rect class="bx-a" x="640" y="24" width="140" height="56" rx="6"/><text class="t" x="710" y="47" text-anchor="middle">출력 헤드</text><text class="s" x="710" y="65" text-anchor="middle">Guard 또는 Linear</text>
+  <path class="ar" d="M150,52 H178" marker-end="url(#ah)"/><path class="ar" d="M310,52 H338" marker-end="url(#ah)"/><path class="ar" d="M450,52 H478" marker-end="url(#ah)"/><path class="ar" d="M610,52 H638" marker-end="url(#ah)"/>
+  <path class="ar-a" d="M710,80 V128" marker-end="url(#ah-a)"/><text class="ta" x="720" y="109">계수</text>
+  <rect class="bx" x="20" y="130" width="170" height="56" rx="6"/><text class="t mo" x="105" y="153" text-anchor="middle">x_raw</text><text class="s" x="105" y="171" text-anchor="middle">마지막 스텝의 상태·입력</text>
+  <path class="ar" d="M190,158 H638" marker-end="url(#ah)"/><text class="s" x="414" y="150" text-anchor="middle">정규화하지 않은 물리 단위 그대로</text>
+  <rect class="bx-a" x="640" y="130" width="140" height="56" rx="6"/><text class="t" x="710" y="153" text-anchor="middle">동역학 스텝</text><text class="s" x="710" y="171" text-anchor="middle">단일 트랙 + Pacejka</text>
+  <path class="ar" d="M780,158 H808" marker-end="url(#ah)"/>
+  <rect class="bx" x="810" y="130" width="110" height="56" rx="6"/><text class="t" x="865" y="153" text-anchor="middle">다음 상태</text><text class="s" x="865" y="171" text-anchor="middle">(vx, vy, ω)</text>
+</svg>
+</div>
+<figcaption><b>Figure 4. 순전파의 두 갈래.</b> 신경망은 윈도 전체를 보고 계수를 정하고, 물리식은 윈도의 마지막 스텝만 사용합니다. <code>forward</code>는 (다음 상태, hidden state, 계수)를 돌려줍니다. 코드: <code>models.py:85-98</code>.</figcaption>
+</figure>
+
+<h3>3.4 Physics Guard</h3>
+<p>Deep Dynamics의 출력 헤드입니다. 마지막 Dense 출력에 sigmoid를 적용한 뒤 YAML에 적힌 범위로 늘려, 각 계수가 항상 <code>Min</code>과 <code>Max</code> 사이에 놓이게 합니다.</p>
+<figure>
+<div class="fig">
+<svg class="narrow" viewBox="0 0 640 220" role="img" aria-label="sigmoid 곡선이 Min과 Max 사이로 제한되는 그래프와, 세 계수의 허용 범위 예시">
+  <path class="dash" d="M60,50 H330"/><path class="dash" d="M60,170 H330"/>
+  <path class="ar" d="M60,190 H340" marker-end="url(#ah)"/><path class="ar" d="M60,190 V30" marker-end="url(#ah)"/>
+  <path class="ar-a" d="M62,168 C170,168 190,52 328,52"/>
+  <text class="s" x="52" y="54" text-anchor="end">Max</text><text class="s" x="52" y="174" text-anchor="end">Min</text>
+  <text class="s mo" x="200" y="210" text-anchor="middle">W·h + b</text><text class="s" x="70" y="24">계수 값</text>
+  <text class="k" x="400" y="40">IAC 설정의 범위 예</text>
+  <text class="t mo" x="400" y="76">Bf</text><path class="ar-a" d="M440,72 H570"/><text class="s" x="440" y="92">5</text><text class="s" x="570" y="92" text-anchor="end">30</text>
+  <text class="t mo" x="400" y="126">Iz</text><path class="ar-a" d="M440,122 H570"/><text class="s" x="440" y="142">500</text><text class="s" x="570" y="142" text-anchor="end">2000</text>
+  <text class="t mo" x="400" y="176">Cm1</text><path class="ar-a" d="M440,172 H570"/><text class="s" x="440" y="192">100</text><text class="s" x="570" y="192" text-anchor="end">10000</text>
+</svg>
+</div>
+<figcaption><b>Figure 5. Physics Guard.</b> <code>계수 = Min + (Max − Min) · sigmoid(W·h + b)</code>. 어떤 입력에도 계수가 범위를 벗어나지 않습니다. 코드: <code>models.py:150-165</code>.</figcaption>
+</figure>
+<div class="tw"><table>
+<thead><tr><th>계수 (17개)</th><th>의미</th><th>Bayesrace 범위</th><th>IAC 범위</th></tr></thead>
+<tbody>
+<tr><td><code>Bf, Br</code></td><td>Pacejka 강성 계수 (앞/뒤)</td><td>5 – 30</td><td>5 – 30</td></tr>
+<tr><td><code>Cf, Cr</code></td><td>Pacejka 형상 계수</td><td>0.5 – 2</td><td>0.5 – 2</td></tr>
+<tr><td><code>Df, Dr</code></td><td>Pacejka 최대 횡력</td><td>0.1 – 0.9</td><td>100 – 10000</td></tr>
+<tr><td><code>Ef, Er</code></td><td>Pacejka 곡률 계수</td><td>−2 – 0</td><td>−2 – 0</td></tr>
+<tr><td><code>Shf, Shr</code></td><td>슬립각 오프셋</td><td>±0.02</td><td>±0.02</td></tr>
+<tr><td><code>Svf, Svr</code></td><td>횡력 오프셋</td><td>±0.003</td><td>±300</td></tr>
+<tr><td><code>Cm1, Cm2</code></td><td>구동계 계수</td><td>0.1435 – 0.574, 0.02725 – 0.109</td><td>100 – 10000, 0 – 1</td></tr>
+<tr><td><code>Cr0, Cr2</code></td><td>구름 저항, 공기 저항</td><td>0.0259 – 0.1036, 1.75e-4 – 7e-4</td><td>0.1 – 1.4, 0.1 – 1</td></tr>
+<tr><td><code>Iz</code></td><td>요 관성 모멘트</td><td>1.39e-5 – 5.56e-5</td><td>500 – 2000</td></tr>
+</tbody></table></div>
+<p>Deep Pacejka는 범위 제한 없는 Linear 헤드로 9개(<code>Bf, Cf, Df, Ef, Br, Cr, Dr, Er, Frx</code>)를 출력하고, <code>Iz</code>는 설정 파일의 고정값을 씁니다.</p>
+
+<h3>3.5 동역학 스텝 <code>differential_equation()</code></h3>
+<figure>
+<div class="fig">
+<svg class="narrow" viewBox="0 0 640 250" role="img" aria-label="단일 트랙 모델 평면도. 뒷바퀴에 종방향 힘 Frx와 횡력 Fry, 조향된 앞바퀴에 횡력 Ffy가 작용하고, 무게중심에서 속도 vx, vy와 요레이트 오메가를 정의한다.">
+  <path class="ln" d="M140,140 H480"/>
+  <rect class="bx-d" x="112" y="131" width="56" height="18" rx="4"/>
+  <rect class="bx-d" x="452" y="131" width="56" height="18" rx="4" transform="rotate(-18 480 140)"/>
+  <path class="dash" d="M480,140 H590"/><path class="dash" d="M480,140 L575,109"/>
+  <text class="t" x="596" y="130">δ</text>
+  <circle class="dot" cx="330" cy="140" r="5"/><text class="s" x="330" y="166" text-anchor="middle">무게중심</text>
+  <path class="ar-a" d="M330,140 H408" marker-end="url(#ah-a)"/><text class="ta" x="414" y="158">vx</text>
+  <path class="ar-a" d="M330,140 V92" marker-end="url(#ah-a)"/><text class="ta" x="338" y="96">vy</text>
+  <path class="ar-a" d="M296,118 A40,40 0 0 1 318,102" marker-end="url(#ah-a)"/><text class="ta" x="278" y="108">ω</text>
+  <path class="ar-w" d="M150,116 H212" marker-end="url(#ah-w)"/><text class="tw2" x="218" y="120">Frx</text>
+  <path class="ar-w" d="M140,128 V70" marker-end="url(#ah-w)"/><text class="tw2" x="148" y="76">Fry</text>
+  <path class="ar-w" d="M477,129 L461,82" marker-end="url(#ah-w)"/><text class="tw2" x="428" y="80">Ffy</text>
+  <path class="ar" d="M140,205 H330" marker-start="url(#ah)" marker-end="url(#ah)"/><text class="s" x="235" y="224" text-anchor="middle">lr</text>
+  <path class="ar" d="M330,205 H480" marker-start="url(#ah)" marker-end="url(#ah)"/><text class="s" x="405" y="224" text-anchor="middle">lf</text>
+  <path class="dash" d="M140,152 V212"/><path class="dash" d="M330,172 V212"/><path class="dash" d="M480,152 V212"/>
+</svg>
+</div>
+<figcaption><b>Figure 6. 단일 트랙 모델.</b> 주황색은 계수로 계산되는 힘, 파란색은 예측 대상인 상태입니다. 차량 제원 <code>lf</code>, <code>lr</code>, <code>mass</code>는 YAML의 <code>VEHICLE_SPECS</code>에서 읽습니다(IAC: 1.248 m, 1.7328 m, 790 kg).</figcaption>
+</figure>
+<pre><code>δ  = STEERING_FB + STEERING_CMD          d = THROTTLE_FB + THROTTLE_CMD
+αf = δ − atan2(lf·ω + vy, |vx|) + Shf    αr = atan2(lr·ω − vy, |vx|) + Shr
+
+Frx = (Cm1 − Cm2·vx)·d − Cr0 − Cr2·vx²
+Ffy = Svf + Df·sin(Cf·atan(Bf·αf − Ef·(Bf·αf − atan(Bf·αf))))
+Fry = Svr + Dr·sin(Cr·atan(Br·αr − Er·(Br·αr − atan(Br·αr))))
+
+v̇x = (Frx − Ffy·sin δ)/m + vy·ω
+v̇y = (Fry + Ffy·cos δ)/m − vx·ω
+ω̇  = (Ffy·lf·cos δ − Fry·lr)/Iz
+
+다음 상태 = 현재 상태 + Ts · [v̇x, v̇y, ω̇]      (explicit Euler 1스텝)</code></pre>
+<p><code>Ts</code>는 설정이 아니라 클래스의 기본 인자로 고정되어 있습니다. Bayesrace용 클래스는 0.02초, IAC용 클래스는 0.04초입니다(<code>models.py:170</code>, <code>:231</code>).</p>
+
+<h3>3.6 학습 루프 <code>model/train.py</code></h3>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 900 200" role="img" aria-label="미니배치를 순전파하고 가중 MSE를 계산해 Adam으로 갱신하는 과정을 배치마다 반복하고, epoch이 끝나면 검증 손실을 계산해 최저값일 때 가중치를 저장한다.">
+  <rect class="bx" x="20" y="40" width="150" height="54" rx="6"/><text class="t" x="95" y="62" text-anchor="middle">미니배치</text><text class="s mo" x="95" y="80" text-anchor="middle">(x_raw, y, x_norm)</text>
+  <rect class="bx" x="200" y="40" width="150" height="54" rx="6"/><text class="t" x="275" y="62" text-anchor="middle">순전파</text><text class="s" x="275" y="80" text-anchor="middle">계수 → 다음 상태</text>
+  <rect class="bx" x="380" y="40" width="150" height="54" rx="6"/><text class="t" x="455" y="62" text-anchor="middle">가중 MSE</text><text class="s" x="455" y="80" text-anchor="middle">가중치 [1, 1, 1]</text>
+  <rect class="bx" x="560" y="40" width="150" height="54" rx="6"/><text class="t" x="635" y="62" text-anchor="middle">Adam 갱신</text><text class="s" x="635" y="80" text-anchor="middle">LR은 YAML 값</text>
+  <rect class="bx" x="740" y="40" width="150" height="54" rx="6"/><text class="t" x="815" y="62" text-anchor="middle">검증 손실</text><text class="s" x="815" y="80" text-anchor="middle">epoch마다 계산</text>
+  <rect class="bx-a" x="740" y="130" width="150" height="54" rx="6"/><text class="t" x="815" y="152" text-anchor="middle">최저값이면 저장</text><text class="s mo" x="815" y="170" text-anchor="middle">epoch_N.pth</text>
+  <path class="ar" d="M170,67 H198" marker-end="url(#ah)"/><path class="ar" d="M350,67 H378" marker-end="url(#ah)"/><path class="ar" d="M530,67 H558" marker-end="url(#ah)"/><path class="ar" d="M710,67 H738" marker-end="url(#ah)"/>
+  <path class="ar" d="M635,94 V124 H95 V96" marker-end="url(#ah)"/><text class="s" x="365" y="142" text-anchor="middle">다음 배치 (400 epoch 동안 반복)</text>
+  <path class="ar" d="M815,94 V128" marker-end="url(#ah)"/>
+</svg>
+</div>
+<figcaption><b>Figure 7. 학습 루프.</b> 결과는 <code>deep_dynamics/output/{설정 이름}/{실험 이름}/</code>에 쌓입니다. <code>best.pth</code> 같은 파일은 없고, 번호가 가장 큰 <code>epoch_N.pth</code>가 검증 손실이 가장 낮았던 가중치입니다. 조기 종료는 검증 손실이 NaN일 때뿐입니다.</figcaption>
+</figure>
+<p><code>--log_wandb</code>를 주면 Weights &amp; Biases에 손실을 기록합니다. <code>tune_hyperparameters.py</code>는 같은 <code>train()</code>을 Ray Tune(Optuna 탐색, ASHA 스케줄러, 200회 시도)으로 감싸 층 수, 뉴런 수, 배치 크기, LR, H, GRU 층 수를 탐색합니다.</p>
+
+<h3>3.7 평가와 활용</h3>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 900 170" role="img" aria-label="세 가지 사용 방식. evaluate.py는 한 스텝 앞을 예측하고, visualize는 계수를 고정한 채 여러 스텝을 이어서 예측하며, mpc는 모델과 제어기가 서로 주고받는 폐루프를 만든다.">
+  <text class="t mo" x="20" y="26">evaluate.py</text><text class="s" x="20" y="44">1스텝 앞 예측</text>
+  <circle class="dot" cx="40" cy="90" r="6"/><circle class="dot" cx="80" cy="90" r="6"/><circle class="dot" cx="120" cy="90" r="6"/><circle class="dot" cx="160" cy="90" r="6"/>
+  <path class="ar-a" d="M170,90 H212" marker-end="url(#ah-a)"/><circle class="dot-a" cx="224" cy="90" r="7"/>
+  <text class="s" x="20" y="134">상태별 RMSE, 최대 오차, 추론 시간</text><text class="s" x="20" y="151">--eval_coeffs: 계수의 평균과 표준편차</text>
+
+  <path class="grid" d="M300,10 V160"/>
+  <text class="t mo" x="320" y="26">visualize/</text><text class="s" x="320" y="44">계수를 고정하고 H스텝 롤아웃</text>
+  <circle class="dot" cx="340" cy="90" r="6"/><circle class="dot" cx="375" cy="90" r="6"/><circle class="dot" cx="410" cy="90" r="6"/>
+  <path class="ar-a" d="M420,90 H440" marker-end="url(#ah-a)"/><circle class="dot-a" cx="452" cy="90" r="6"/>
+  <path class="ar-a" d="M462,90 H482" marker-end="url(#ah-a)"/><circle class="dot-a" cx="494" cy="90" r="6"/>
+  <path class="ar-a" d="M504,90 H524" marker-end="url(#ah-a)"/><circle class="dot-a" cx="536" cy="90" r="6"/>
+  <path class="ar-a" d="M546,90 H566" marker-end="url(#ah-a)"/><circle class="dot-a" cx="578" cy="90" r="6"/>
+  <text class="s" x="320" y="134">궤적 오차 ADE, FDE [m]</text><text class="s" x="320" y="151">트랙 위 오차 지도, 타이어 곡선</text>
+
+  <path class="grid" d="M610,10 V160"/>
+  <text class="t mo" x="630" y="26">mpc/</text><text class="s" x="630" y="44">Bayesrace NMPC 폐루프</text>
+  <rect class="bx-a" x="640" y="68" width="90" height="44" rx="6"/><text class="t" x="685" y="95" text-anchor="middle">모델</text>
+  <rect class="bx" x="790" y="68" width="90" height="44" rx="6"/><text class="t" x="835" y="95" text-anchor="middle">NMPC</text>
+  <path class="ar" d="M730,80 H788" marker-end="url(#ah)"/><path class="ar" d="M790,100 H732" marker-end="url(#ah)"/>
+  <text class="s" x="630" y="134">매 스텝 추정한 계수를 제어기 모델에 반영</text><text class="s" x="630" y="151">주행 궤적과 입력을 npz로 저장</text>
+</svg>
+</div>
+<figcaption><b>Figure 8. 학습된 모델을 쓰는 세 가지 방식.</b> MPC 루프의 자세한 구조는 3.8절에 있습니다. 회색 점은 관측된 과거, 파란 점은 예측입니다. <code>visualize/</code>와 <code>mpc/</code> 스크립트는 저장소에 없는 체크포인트 경로를 가리키고 있어, 먼저 직접 학습한 뒤 경로를 고쳐야 실행됩니다.</figcaption>
+</figure>
+
+<h3 id="mpc">3.8 MPC 폐루프 시뮬레이션 <code>mpc/</code></h3>
+<p>MPC는 학습되는 모델이 아니라 최적화 기반 제어기입니다. 내부에 차량 모델(단일 트랙 + Pacejka 수식)을 갖고 있고, 그 모델로 앞 13스텝(0.26초)의 움직임을 계산해 보면서 기준 경로를 가장 잘 따라가는 스로틀과 조향을 구합니다. Deep Dynamics의 역할은 이 내부 모델에 들어갈 계수를 매 스텝 새로 공급하는 것입니다. 제어기 구현은 이 저장소가 아니라 외부 라이브러리 <code>bayes_race</code>와 CasADi에 있습니다.</p>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 920 290" role="img" aria-label="트랙의 레이스라인에서 경로 계획이 기준 경로를 만들고, NMPC가 입력을 계산해 차량 시뮬레이터에 넣는다. 시뮬레이터의 상태는 NMPC로 되돌아가고, 최근 기록이 Deep Dynamics에 들어가 추정된 계수가 NMPC의 내부 모델을 갱신한다.">
+  <rect class="bx" x="20" y="40" width="170" height="56" rx="6"/><text class="t" x="105" y="63" text-anchor="middle">트랙 · 레이스라인</text><text class="s" x="105" y="81" text-anchor="middle">미리 주어진 지도</text>
+  <rect class="bx" x="220" y="40" width="190" height="56" rx="6"/><text class="t" x="315" y="63" text-anchor="middle">경로 계획</text><text class="s" x="315" y="81" text-anchor="middle">앞 13스텝의 기준 경로</text>
+  <rect class="bx" x="440" y="40" width="190" height="56" rx="6"/><text class="t" x="535" y="63" text-anchor="middle">NMPC</text><text class="s" x="535" y="81" text-anchor="middle">내부 차량 모델로 최적화</text>
+  <rect class="bx" x="710" y="40" width="190" height="56" rx="6"/><text class="t" x="805" y="63" text-anchor="middle">차량 시뮬레이터</text><text class="s" x="805" y="81" text-anchor="middle">Bayesrace, 정답 계수 사용</text>
+  <path class="ar" d="M190,68 H218" marker-end="url(#ah)"/><path class="ar" d="M410,68 H438" marker-end="url(#ah)"/>
+  <path class="ar" d="M630,68 H708" marker-end="url(#ah)"/><text class="s" x="670" y="32" text-anchor="middle">첫 스텝의 입력</text><text class="s" x="670" y="58" text-anchor="middle">PWM, 조향</text>
+
+  <path class="ar" d="M805,96 V198" marker-end="url(#ah)"/>
+  <path class="ar" d="M805,140 H590 V98" marker-end="url(#ah)"/><text class="s" x="698" y="133" text-anchor="middle">현재 상태</text>
+  <text class="s" x="815" y="170">상태 6개</text>
+
+  <rect class="bx" x="710" y="200" width="190" height="56" rx="6"/><text class="t" x="805" y="223" text-anchor="middle">기록 버퍼</text><text class="s" x="805" y="241" text-anchor="middle">최근 H스텝의 상태·입력</text>
+  <rect class="bx-a" x="440" y="200" width="190" height="56" rx="6"/><text class="t" x="535" y="223" text-anchor="middle">Deep Dynamics</text><text class="s" x="535" y="241" text-anchor="middle">신경망 + Physics Guard</text>
+  <path class="ar" d="M710,228 H632" marker-end="url(#ah)"/>
+  <path class="ar-a" d="M490,200 V98" marker-end="url(#ah-a)"/><text class="ta" x="480" y="146" text-anchor="end">계수 17개</text><text class="s" x="480" y="163" text-anchor="end">내부 모델을 교체</text>
+
+  <text class="s" x="20" y="222">0.02초마다 한 바퀴 반복</text><text class="s" x="20" y="240">처음 15스텝은 pure pursuit로 주행</text>
+</svg>
+</div>
+<figcaption><b>Figure 12. MPC 폐루프.</b> 파란 화살표가 Deep Dynamics가 기여하는 유일한 지점입니다. 신경망은 조향을 직접 내지 않고, 제어기가 쓰는 차량 모델의 계수만 바꿉니다. 차량 시뮬레이터는 1:43 모형차(ORCA)의 정답 계수로 같은 형태의 수식을 적분합니다. 코드: <code>mpc/run_nmpc_orca_deep_dynamics.py:146-186</code>.</figcaption>
+</figure>
+<p>학습 데이터의 FB와 CMD는 이 루프의 신호에 대응합니다. FB는 직전 스텝에 차량에 걸려 있던 입력이고, CMD는 제어기가 이번 스텝에 바꾼 양입니다. 둘을 더한 값이 이번 구간에 실제로 가해지는 입력입니다.</p>
+
+<h3 id="realgap">3.9 실제 차량과 이 시뮬레이션의 차이</h3>
+<p>실제 자율주행 차량에는 센서, 위치·상태 추정, 경로 계획, 제어가 차례로 있습니다. 이 저장소는 그중 <b>제어기 안에서 쓰이는 차량 모델</b> 하나만 다룹니다. 인식에 해당하는 모듈은 없습니다.</p>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 940 270" role="img" aria-label="실제 차량은 센서, 위치와 상태 추정, 경로 계획, 제어기, 실제 차량의 다섯 단계로 이루어진다. 저장소의 MPC 시뮬레이션에는 센서와 상태 추정이 없고 시뮬레이터가 참값을 직접 주며, 차량도 수식으로 대체된다.">
+  <text class="t" x="20" y="64">실제 차량</text><text class="s" x="20" y="82">AV-21</text>
+  <rect class="bx" x="130" y="40" width="140" height="56" rx="6"/><text class="t" x="200" y="63" text-anchor="middle">센서</text><text class="s" x="200" y="81" text-anchor="middle">GNSS 등</text>
+  <rect class="bx" x="292" y="40" width="140" height="56" rx="6"/><text class="t" x="362" y="63" text-anchor="middle">위치 · 상태 추정</text><text class="s" x="362" y="81" text-anchor="middle">x, y, ψ, vx, vy, ω</text>
+  <rect class="bx" x="454" y="40" width="140" height="56" rx="6"/><text class="t" x="524" y="63" text-anchor="middle">경로 계획</text><text class="s" x="524" y="81" text-anchor="middle">레이스라인</text>
+  <rect class="bx-a" x="616" y="40" width="140" height="56" rx="6"/><text class="t" x="686" y="63" text-anchor="middle">제어기</text><text class="s" x="686" y="81" text-anchor="middle">차량 모델을 사용</text>
+  <rect class="bx" x="778" y="40" width="140" height="56" rx="6"/><text class="t" x="848" y="63" text-anchor="middle">실제 차량</text><text class="s" x="848" y="81" text-anchor="middle">액추에이터, 타이어</text>
+  <path class="ar" d="M270,68 H290" marker-end="url(#ah)"/><path class="ar" d="M432,68 H452" marker-end="url(#ah)"/><path class="ar" d="M594,68 H614" marker-end="url(#ah)"/><path class="ar" d="M756,68 H776" marker-end="url(#ah)"/>
+  <text class="s" x="362" y="116" text-anchor="middle">AV-21 CSV는 이 단계의 출력</text>
+  <text class="ta" x="686" y="116" text-anchor="middle">이 저장소가 다루는 부분</text>
+
+  <path class="grid" d="M20,138 H920"/>
+  <text class="t mo" x="20" y="194">mpc/</text><text class="s" x="20" y="212">시뮬레이션</text>
+  <rect class="c-gap" x="130" y="170" width="302" height="56" rx="6"/><text class="t" x="281" y="193" text-anchor="middle">없음</text><text class="s" x="281" y="211" text-anchor="middle">시뮬레이터가 상태의 참값을 그대로 전달</text>
+  <rect class="bx" x="454" y="170" width="140" height="56" rx="6"/><text class="t" x="524" y="193" text-anchor="middle">경로 계획</text><text class="s" x="524" y="211" text-anchor="middle">주어진 레이스라인</text>
+  <rect class="bx-a" x="616" y="170" width="140" height="56" rx="6"/><text class="t" x="686" y="193" text-anchor="middle">NMPC</text><text class="s" x="686" y="211" text-anchor="middle">Deep Dynamics 계수</text>
+  <rect class="bx" x="778" y="170" width="140" height="56" rx="6"/><text class="t" x="848" y="193" text-anchor="middle">시뮬레이터</text><text class="s" x="848" y="211" text-anchor="middle">1:43 모형차 수식</text>
+  <path class="ar" d="M432,198 H452" marker-end="url(#ah)"/><path class="ar" d="M594,198 H614" marker-end="url(#ah)"/><path class="ar" d="M756,198 H776" marker-end="url(#ah)"/>
+  <path class="ar" d="M848,226 V250 H281 V228" marker-end="url(#ah)"/>
+</svg>
+</div>
+<figcaption><b>Figure 13. 실제 주행 스택과 저장소의 폐루프 시뮬레이션.</b> 레이싱에서는 트랙이 미리 알려져 있어 경로 계획이 지도 위에서 이루어집니다. AV-21 로그의 상태는 차량의 위치·상태 추정 단계가 만든 값(<code>/vehicle/uva_odometry</code>)이므로, 이 파이프라인은 인식이 끝난 뒤의 데이터에서 출발합니다.</figcaption>
+</figure>
+<div class="tw"><table>
+<thead><tr><th>항목</th><th>실제 AV-21 주행</th><th>저장소의 <code>mpc/</code> 시뮬레이션</th></tr></thead>
+<tbody>
+<tr><td>상태를 얻는 방법</td><td>센서와 추정기. 잡음과 지연이 있음</td><td>시뮬레이터의 참값. 잡음과 지연 없음</td></tr>
+<tr><td>차량</td><td>790 kg 실차. 타이어 온도·마모, 공력, 하중 이동 등이 작용</td><td>41 g 모형차의 단일 트랙 수식. 계수가 고정된 정답값</td></tr>
+<tr><td>모델과 차량의 관계</td><td>단일 트랙 모델은 실차의 근사</td><td>시뮬레이터와 학습 모델이 같은 형태의 수식. 구조 오차가 없음</td></tr>
+<tr><td>액추에이터</td><td>조향·브레이크에 응답 지연</td><td>입력이 즉시 그대로 반영</td></tr>
+<tr><td>이 저장소에서의 검증</td><td>기록된 로그에 대한 예측 오차만 계산(<code>evaluate.py</code>, <code>visualize/</code>). 폐루프 주행 코드는 없음</td><td>폐루프 주행으로 랩타임과 궤적을 비교</td></tr>
+</tbody></table></div>
+<p class="note">따라서 <code>mpc/</code> 결과는 "계수 추정이 정확하면 제어 성능이 좋아진다"는 것을 이상적인 조건에서 보인 것입니다. AV-21에 대해서는 이 저장소만으로 폐루프 성능을 말할 수 없고, 로그에 대한 예측 정확도까지만 확인할 수 있습니다.</p>
+
+<h2 id="configs">4. 설정 파일</h2>
+<div class="tw nw"><table>
+<thead><tr><th>파일 (<code>cfgs/model/</code>)</th><th>데이터</th><th class="n">H</th><th>층 구성</th><th class="n">배치</th><th class="n">LR</th></tr></thead>
+<tbody>
+<tr><td><code>deep_dynamics.yaml</code></td><td>Bayesrace</td><td class="n">5</td><td>GRU 7층 + Dense 436 × 16</td><td class="n">32</td><td class="n">0.0006</td></tr>
+<tr><td><code>deep_dynamics_iac.yaml</code></td><td>AV-21</td><td class="n">15</td><td>GRU 3층 + Dense 188 × 2</td><td class="n">128</td><td class="n">0.001</td></tr>
+<tr><td><code>deep_pacejka.yaml</code></td><td>Bayesrace</td><td class="n">10</td><td>GRU 8층 + Dense 108 × 2</td><td class="n">16</td><td class="n">0.002812</td></tr>
+<tr><td><code>deep_pacejka_iac.yaml</code></td><td>AV-21</td><td class="n">16</td><td>GRU 5층 + Dense 254 × 1</td><td class="n">128</td><td class="n">0.000439</td></tr>
+</tbody></table></div>
+<p>네 파일 모두 손실 MSE, 최적화기 Adam, 400 epoch입니다. 변환기에 넘기는 horizon 인자는 이 표의 H와 같아야 하며, 다르면 텐서 크기 오류가 납니다.</p>
+
+<h2 id="run">5. 실행 순서</h2>
+<p>수정 후 코드 기준의 명령입니다(3부 참고). 전체 과정은 <code>experiments/reproduce.sh</code>에 들어 있습니다.</p>
+<pre><code>pip install -e .
+
+# 1) 변환: 학습용과 테스트용을 따로 만든다
+cd deep_dynamics/tools
+python3 csv_parser.py ../data/Putnam_park2023_run2_1.csv ../data/Putnam_park2023_run4_1.csv \
+        ../data/Putnam_park2023_run4_2.csv 15 --output ../data/putnam_train_15.npz
+python3 csv_parser.py ../data/LVMS_23_01_04_A.csv ../data/LVMS_23_01_04_B.csv 15 \
+        --output ../data/lvms_test_15.npz
+
+# 2) 학습: 학습용 파일 안에서 시간 순서로 학습/검증을 나눈다
+cd ../model
+python3 train.py ../cfgs/model/deep_dynamics_iac_paper.yaml ../data/putnam_train_15.npz exp1 --seed 0
+
+# 3) 평가: 가중치와 같은 폴더의 scaler.pkl 을 자동으로 읽는다
+python3 evaluate.py ../cfgs/model/deep_dynamics_iac_paper.yaml ../data/lvms_test_15.npz \
+        ../output/deep_dynamics_iac_paper/exp1/epoch_N.pth
+python3 evaluate_rollout.py ../cfgs/model/deep_dynamics_iac_paper.yaml ../data/lvms_test_15.npz \
+        ../output/deep_dynamics_iac_paper/exp1/epoch_N.pth</code></pre>
+
+</div>
+</body>
+</html>
