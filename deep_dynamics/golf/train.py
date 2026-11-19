@@ -32,9 +32,10 @@ def windows(segments, H, horizon=1, stride=1):
             X.append(su[k - H + 1:k + 1])
             Y.append(s[k + 1:k + 1 + horizon])
             U.append(u[k + 1:k + horizon])
-    X = np.asarray(X, dtype=np.float32).reshape(-1, H, NF)
+    nf = segments[0][0].shape[1] + segments[0][1].shape[1] if segments else NF   # [11/19] 경사 채널(7)도 받게
+    X = np.asarray(X, dtype=np.float32).reshape(-1, H, nf)
     Y = np.asarray(Y, dtype=np.float32).reshape(-1, horizon, 3)
-    U = np.asarray(U, dtype=np.float32).reshape(len(X), horizon - 1, 3)
+    U = np.asarray(U, dtype=np.float32).reshape(len(X), horizon - 1, nf - 3)
     return X, Y, U
 
 

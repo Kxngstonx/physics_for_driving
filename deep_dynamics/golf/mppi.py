@@ -10,6 +10,9 @@
   - episode(): world 에 reset/pose 가 있으면(시뮬레이터) 시작 상태를 넣고 위치도 world 에서 받음.
     정지 판정 3 m/s (문서 9-1절). 출발 속도 v0 를 줄 수 있음 (기본: 트랙 시작점 목표 속도)
   - Track(flat=True, 기본): 횡경사를 0 으로 (시뮬레이터가 평평한 길이므로 모델 입력도 같게)
+  - [11/19] 경사: Track 이 트랙 파일의 grade 를 읽는다(없으면 0). 모델 설정이 use_grade 면 입력 줄 = [s, u, bank, grade]
+    (MPPI 는 굴리는 매 스텝의 예측 위치 경사를 넣음). 세계(시뮬레이터)에는 앞 6열만 넘긴다.
+  - [11/19] 이탈 판정: 차 중심이 경계 밖으로 차 반폭(OFF_TRACK_M = 0.9 m)을 넘으면 = 차 전체가 경계 밖 (이전 2.0 m)
 
 세계(world): hist (1,H,6) → 다음 [vx, vy, r] 를 내는 함수. 위치·방향은 운동학으로 적분.
 제어기(MPPI): 비교 대상 모델을 내부 모델로 써서 K 개 조작 후보를 N 스텝 굴려 보고 가중 평균.
@@ -30,6 +33,18 @@ DELTA_MAX = 0.30
 SIGMA_FORCE = (1000.0, 0.06)
 W_DU_FORCE = 5.0 * (1.7 / 13000.0) ** 2
 F_CRUISE = sim.road_load(20.0)  # 20 m/s 정속 주행 저항 — 첫 계획의 힘 초기값
+OFF_TRACK_M = 0.9  # [11/19 팀 결정] 이탈 판정: 차 중심이 경계 밖으로 이만큼 넘으면 (Golf 폭 약 1.79 m 의 절반 = 차 전체가 밖)
+
+
+def n_road(model):
+    """모델 입력의 노면 열 수: 1 [bank] 또는 경사 채널 모델이면 2 [bank, grade]."""
+    cfg = getattr(model, "cfg", None)
+    return 2 if getattr(cfg, "use_grade", False) else 1
+
+
+def road(tr, ix, nr):
+    """트랙 인덱스 ix (K,) → 노면 열 (K, nr)."""
+    return tr.bank[ix].unsqueeze(-1) if nr == 1 else torch.stack([tr.bank[ix], tr.grade[ix]], -1)
 
 
 class Track:
@@ -44,6 +59,8 @@ class Track:
         self.x, self.y, self.psi, self.vref = f("x"), f("y"), f("psi"), f("vref")
         self.wl, self.wr = f("width_l"), f("width_r")
         self.bank = torch.tensor(self.np["bank"], dtype=torch.float32, device=DEV)
+        g = self.np.get("grade", np.zeros(self.n))  # [11/19] 경사 (rad, 오르막 +). track_osm 트랙에만 있음
+        self.grade = torch.tensor(g, dtype=torch.float32, device=DEV)
 
     def project(self, X, Y, idx0, back=10, ahead=90):
         """X, Y (K,), idx0 (K,) long → 가장 가까운 중심선 인덱스, 횡오차(왼쪽 +)."""
@@ -81,6 +98,7 @@ class MPPI:
         self.u_hi = torch.tensor((float(fg.max()), DELTA_MAX), device=DEV)
         self.use_graph = use_graph
         self.m, self.tr, self.K, self.N = model, track, K, N
+        self.nr = n_road(model)
         self.sig = torch.tensor(sigma, device=DEV)
         self.lam = lam
         self.U = torch.zeros(N, 2, device=DEV)
@@ -114,7 +132,7 @@ class MPPI:
             fmax = self.cap_f[j - 1] + t * (self.cap_f[j] - self.cap_f[j - 1])
             u = torch.stack([torch.minimum(U[:, k, 0], fmax), U[:, k, 1]], 1)
             U[:, k] = u
-            h = torch.cat([hist, torch.cat([s, u, self.tr.bank[ix].unsqueeze(1)], 1).unsqueeze(1)], 1)
+            h = torch.cat([hist, torch.cat([s, u, road(self.tr, ix, self.nr)], 1).unsqueeze(1)], 1)
             s_next = self.m(h)
             bad = ~torch.isfinite(s_next).all(1) | (s_next.abs() > 200).any(1)
             s_next = torch.where(bad.unsqueeze(1), s, s_next)
@@ -210,7 +228,9 @@ def episode(ctrl, world, track, K=1024, N=25, seed=0, max_time=None, record=True
     pose = torch.tensor([float(tr.x[i0]), float(tr.y[i0]), float(tr.psi[i0])], device=DEV)
     s = torch.tensor([v0, 0.0, 0.0], device=DEV)
     u_prev = torch.tensor(u0, device=DEV)
-    hist_past = torch.cat([s, u_prev, tr.bank[i0:i0 + 1]]).repeat(H - 1, 1)  # 정상 주행 중이었다고 가정한 과거
+    nr = n_road(ctrl)
+    i0t = torch.tensor([i0], device=DEV)
+    hist_past = torch.cat([s, u_prev, road(tr, i0t, nr)[0]]).repeat(H - 1, 1)  # 정상 주행 중이었다고 가정한 과거
     if hasattr(world, "reset"):  # 시뮬레이터: 같은 시작 상태
         world.reset(float(pose[0]), float(pose[1]), float(pose[2]), v0, F0=u0[0])
     mp = make_ctrl(ctrl, tr) if make_ctrl else MPPI(ctrl, tr, K=K, N=N, seed=seed, **mppi_kw)
@@ -227,11 +247,11 @@ def episode(ctrl, world, track, K=1024, N=25, seed=0, max_time=None, record=True
         n_done = t + 1
         mp.s_now = s
         u = mp.act(hist_past, pose, int(idx), u_prev)
-        row = torch.cat([s, u, tr.bank[idx]])
+        row = torch.cat([s, u, road(tr, idx, nr)[0]])
         h = torch.cat([hist_past, row.unsqueeze(0)], 0).unsqueeze(0)
         if hasattr(world, "set_pos"):  # 정답 현실 시뮬레이터: 트랙 위치별 노면 마찰 등
             world.set_pos(idx)
-        s_next = world(h)[0]
+        s_next = world(h[..., :6] if not getattr(getattr(world, "cfg", None), "use_grade", False) else h)[0]
         if not torch.isfinite(s_next).all() or s_next.abs().max() > 200:
             status = "world_nan"
             break
@@ -248,7 +268,7 @@ def episode(ctrl, world, track, K=1024, N=25, seed=0, max_time=None, record=True
                 log[k].append(float(v))
         hist_past = torch.cat([hist_past[1:], row.unsqueeze(0)], 0)
         s, u_prev = s_next, u
-        if abs(float(ey)) > half + 2.0:
+        if abs(float(ey)) > half + OFF_TRACK_M:
             status = "off_track"
             break
         armed = armed or float(s_next[0]) >= v_armed

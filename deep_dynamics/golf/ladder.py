@@ -51,6 +51,14 @@ class VehicleConfig:
     nsub: int = 4               # 한 스텝을 몇 번에 나눠 적분할지
     note: str = ""
 
+    use_grade: bool = False     # [11/19] 노면 경사(오르막 +, rad) 입력 채널. True 면 hist (B,H,7) = [vx,vy,r,lon,delta,bank,grade],
+                                #   물리 식 dvx 에 −g·sin(경사). False(기본)면 이전과 출력이 같다
+
+    @property
+    def nf(self):
+        """시점당 특징 수: 6 [vx, vy, r, lon, delta, bank], 경사를 쓰면 7 (+grade)."""
+        return NF + 1 if self.use_grade else NF
+
     @property
     def pnames(self):
         return [p[0] for p in self.phys]
@@ -74,14 +82,14 @@ class Norm(nn.Module):
     """학습 데이터로만 맞춘 표준화 상수 (버퍼로 모델 안에 저장됨).
     X: (N, H, 6) 학습 창, Y: (N, k, 3) 정답 다음 상태. 시험 데이터로 만들면 누수."""
 
-    def __init__(self, X=None, Y=None):
+    def __init__(self, X=None, Y=None, nf=NF):
         super().__init__()
         if X is None:
-            mu, sd, dsd = torch.zeros(NF), torch.ones(NF), torch.ones(3)
+            mu, sd, dsd = torch.zeros(nf), torch.ones(nf), torch.ones(3)
         else:
             X = torch.as_tensor(X, dtype=torch.float64)
             Y = torch.as_tensor(Y, dtype=torch.float64)
-            flat = X.reshape(-1, NF)
+            flat = X.reshape(-1, X.shape[-1])
             mu, sd = flat.mean(0), flat.std(0, unbiased=False) + 1e-6
             dsd = (Y[:, 0, :] - X[:, -1, :3]).std(0, unbiased=False) + 1e-9
         self.register_buffer("mu", mu.float())
@@ -105,8 +113,8 @@ def slips(cfg, vx, vy, r, delta):
     return af, ar
 
 
-def deriv(cfg, vx, vy, r, lon, delta, bank, Ffy, Fry, P):
-    """자전거 모델 미분. Ffy, Fry: 앞·뒤 타이어 횡력 (N)."""
+def deriv(cfg, vx, vy, r, lon, delta, bank, Ffy, Fry, P, grade=None):
+    """자전거 모델 미분. Ffy, Fry: 앞·뒤 타이어 횡력 (N). grade: 노면 경사 rad (None 이면 평지, [11/19])."""
     m, lf, lr = cfg.m, cfg.lf, cfg.lr
     if cfg.lon_input == "pedal":
         # 원본(iac_lib.frx, bike_deriv)과 같은 식. 구동·제동·저항을 합친 Fx 가 차체 진행 방향으로 작용
@@ -126,6 +134,8 @@ def deriv(cfg, vx, vy, r, lon, delta, bank, Ffy, Fry, P):
         dvx = (Fxf * c - Ffy * s + Fxr - res) / m + vy * r
         dvy = (Fry + Ffy * c + Fxf * s) / m - vx * r + P["kb"] * G * torch.sin(bank)
         dr = (lf * (Ffy * c + Fxf * s) - lr * Fry) / P["Iz"]
+    if grade is not None:  # [11/19] 경사 중력 성분 (오르막 +)
+        dvx = dvx - G * torch.sin(grade)
     return dvx, dvy, dr
 
 
@@ -134,7 +144,8 @@ def phys_step(cfg, s, u, P, tire=None):
     tire=None 이면 Pacejka, 아니면 tire(af, ar, vx) → (Ffy, Fry)."""
     vx, vy, r = s.unbind(-1)
     vy = vy - P["ds"] * r  # 측정 위치의 vy → 무게중심 vy
-    lon, delta, bank = u.unbind(-1)
+    lon, delta, bank = u[..., 0], u[..., 1], u[..., 2]
+    grade = u[..., 3] if u.shape[-1] > 3 else None
     h = cfg.dt / cfg.nsub
     for _ in range(cfg.nsub):
         af, ar = slips(cfg, vx, vy, r, delta)
@@ -143,7 +154,7 @@ def phys_step(cfg, s, u, P, tire=None):
             Fry = pacejka(ar, P["Br"], P["Cr"], P["Dr"], P["Er"])
         else:
             Ffy, Fry = tire(af, ar, vx)
-        dvx, dvy, dr = deriv(cfg, vx, vy, r, lon, delta, bank, Ffy, Fry, P)
+        dvx, dvy, dr = deriv(cfg, vx, vy, r, lon, delta, bank, Ffy, Fry, P, grade)
         vx, vy, r = vx + h * dvx, vy + h * dvy, r + h * dr
     return torch.stack([vx, vy + P["ds"] * r, r], -1)
 
@@ -215,7 +226,7 @@ class R2(Base):
     def __init__(self, cfg, norm):
         super().__init__(cfg, norm)
         self.g = GlobalPhys(cfg)
-        self.res = mlp(NF * cfg.hist, [64, 64], 3)
+        self.res = mlp(cfg.nf * cfg.hist, [64, 64], 3)
         nn.init.zeros_(self.res[-1].weight)  # 시작은 R1 과 같음
 
     def forward(self, hist):
@@ -256,7 +267,7 @@ class R4(Base):
 
     def __init__(self, cfg, norm):
         super().__init__(cfg, norm)
-        self.body = mlp(NF * cfg.hist, [128, 128], len(cfg.phys))
+        self.body = mlp(cfg.nf * cfg.hist, [128, 128], len(cfg.phys))
         lo, rng, z0 = _guard_buffers(cfg)
         self.register_buffer("lo", lo)
         self.register_buffer("rng", rng)
@@ -277,7 +288,7 @@ class R5(Base):
 
     def __init__(self, cfg, norm):
         super().__init__(cfg, norm)
-        self.net = mlp(NF * cfg.hist, [128, 128], 3)
+        self.net = mlp(cfg.nf * cfg.hist, [128, 128], 3)
 
     def forward(self, hist):
         return hist[:, -1, :3] + self.net(self.norm.x(hist)) * self.norm.dsd
@@ -288,7 +299,7 @@ class R6(Base):
 
     def __init__(self, cfg, norm):
         super().__init__(cfg, norm)
-        self.net = mlp(NF * cfg.hist, [128, 128], 3)
+        self.net = mlp(cfg.nf * cfg.hist, [128, 128], 3)
 
     def forward(self, hist):
         return self.net(self.norm.x(hist)) * self.norm.sd[:3] + self.norm.mu[:3]
@@ -299,7 +310,7 @@ RUNG_KO = dict(R1="순수 물리", R2="물리+잔차", R3="신경망 타이어",
 
 
 def build(rung, cfg, norm=None, device="cpu"):
-    return RUNGS[rung](cfg, norm if norm is not None else Norm()).to(device)
+    return RUNGS[rung](cfg, norm if norm is not None else Norm(nf=cfg.nf)).to(device)
 
 
 def save_model(model, rung, path):
@@ -309,7 +320,7 @@ def save_model(model, rung, path):
 def load_model(path, cfg, device="cpu"):
     """cfg 는 저장할 때와 같은 VehicleConfig 여야 함 (계수 순서·범위가 state 에 맞아야 함)."""
     d = torch.load(path, map_location=device)
-    m = build(d["rung"], cfg, Norm(), device)
+    m = build(d["rung"], cfg, Norm(nf=cfg.nf), device)
     m.load_state_dict(d["state"])
     return m.eval()
 

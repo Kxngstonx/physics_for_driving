@@ -37,7 +37,7 @@ def save(d):
 def drive(kind, N, tag_of, seeds):
     import torch
     import tune_mppi as T
-    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG
+    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG, cfg_of_model
     from deep_dynamics.golf.ladder import load_model
     c = json.load(open(os.path.join(RES, "mppi_tune.json")))["chosen"][f"B_{N}"]
     tr, grade, info = T.b_track()
@@ -47,7 +47,8 @@ def drive(kind, N, tag_of, seeds):
             d = load()
             if any(r["kind"] == kind and r["N"] == N and r["tag"] == tag for r in d["runs"]):
                 continue
-            model = load_model(os.path.join(RES, "models", tag + ".pt"), CFG, mppi.DEV)
+            pt = os.path.join(RES, "models", tag + ".pt")
+            model = load_model(pt, cfg_of_model(pt, CFG), mppi.DEV)  # [11/19] 경사 모델은 json 의 cfg 로
             w = sim.calibrated_world(delays=dict(steer=T.steer_delay()), grade_by_idx=grade)
             res, log = mppi.episode(model, w, tr, N=N, seed=seed, i0=info["start_idx"], v_armed=10.0, mode="B", lam=c["lam"],
                                     sigma=tuple(c["noise"] * s for s in mppi.SIGMA_FORCE))

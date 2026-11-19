@@ -16,7 +16,7 @@ import os
 import torch
 
 from . import data as D
-from .configs import ALL
+from .configs import ALL, road_of
 from .ladder import save_model
 from .train import MAX_EPOCHS, fit, windows
 
@@ -34,7 +34,7 @@ a = ap.parse_args()
 cfg = ALL[a.cfg]
 dev = "cuda" if torch.cuda.is_available() else "cpu"
 sp = D.get_split()
-tr, va = (windows(D.split_segs(sp[k], v_stop=a.vmin), cfg.hist, horizon=a.roll) for k in ("train", "val"))
+tr, va = (windows(D.split_segs(sp[k], v_stop=a.vmin, road=road_of(cfg)), cfg.hist, horizon=a.roll) for k in ("train", "val"))
 tag = f"{a.rung}_s{a.seed}_roll{a.roll}" + ("" if a.vmin == D.V_STOP else f"_v{a.vmin:g}")
 print(tag, "학습 창", len(tr[0]), "검증 창", len(va[0]), "장치", dev, flush=True)
 model, rec = fit(a.rung, cfg, tr, va, max_epochs=a.max_epochs, lr=a.lr, seed=a.seed, device=dev, log_every=10)

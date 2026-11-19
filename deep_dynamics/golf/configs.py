@@ -4,6 +4,8 @@ AV21_IAC         : 11/12 IAC 실험에 쓴 값 그대로 (참조용)
 GTI_THUNDERHILL  : 썬더힐 Stanford VW GTI 용 초안 (참조용. 제원 추정 검증에 알려진 값으로 씀)
 GOLF_THUNDERHILL : 본 실험 차량. 제원은 데이터로 추정 (specs.py, experiments/golf/results/specs.json)
 """
+from dataclasses import replace
+
 from .ladder import VehicleConfig
 
 # ------------------------------------------------------------ IAC AV-21 (Deep Dynamics 공개 데이터)
@@ -63,4 +65,25 @@ GOLF_THUNDERHILL = VehicleConfig(
     note="lon = Fxf (N). 200 Hz → 10 Hz 저역 통과 → 8개마다 1개 (dt 0.04). 제원 추정 근거는 specs.md",
 )
 
-ALL = {c.name: c for c in (AV21_IAC, GTI_THUNDERHILL, GOLF_THUNDERHILL)}
+# [11/19 팀 결정] 경사 입력 (우리 방식): 같은 차량 값 + use_grade. 학습 데이터 u = [Fxf, delta, bank=0, grade]
+#   (data.load_run(road="grade"): 경사는 트랙 지도 experiments/golf/results/tracks/thunderhill_boundary.npz 의 grade,
+#    좌우 기울기는 0 — 데이터 bank_rad 열은 센서와 안 맞고 시뮬레이터·MPPI 도 평평한 길이므로). 물리 식 dvx 에 −g·sin(경사)
+GOLF_THUNDERHILL_G = replace(GOLF_THUNDERHILL, name="GOLF_THUNDERHILL_G", use_grade=True,
+                             note=GOLF_THUNDERHILL.note + " + 경사 채널 (use_grade, bank=0)")
+
+ALL = {c.name: c for c in (AV21_IAC, GTI_THUNDERHILL, GOLF_THUNDERHILL, GOLF_THUNDERHILL_G)}
+
+
+def road_of(cfg):
+    """설정에 맞는 데이터 노면 열: 'grade' ([bank=0, grade]) 또는 'bank' (이전, 데이터 bank_rad)."""
+    return "grade" if getattr(cfg, "use_grade", False) else "bank"
+
+
+def cfg_of_model(pt_path, default=GOLF_THUNDERHILL):
+    """학습한 모델(.pt) 옆 .json 의 cfg 이름으로 설정을 고른다 (run_train 이 저장). 없으면 default."""
+    import json
+    import os
+    js = os.path.splitext(pt_path)[0] + ".json"
+    if os.path.exists(js):
+        return ALL.get(json.load(open(js)).get("cfg"), default)
+    return default

@@ -285,7 +285,7 @@ def stage_closed(res, key="closed", mppi_kw=None):
     처음 기준(6개 모두의 중앙값)도 함께 기록한다."""
     import torch
     from deep_dynamics.golf import mppi
-    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG
+    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG, cfg_of_model
     from deep_dynamics.golf.ladder import load_model
     tr, grade, info = recorded_track()
     mu = sim.load_calibration()["mu_scale"]
@@ -298,7 +298,8 @@ def stage_closed(res, key="closed", mppi_kw=None):
         for R in ("R1", "R2", "R3", "R4", "R5", "R6"):
             if (R, sd) in done:
                 continue
-            model = load_model(os.path.join(mdir, f"{R}_s0_roll25.pt"), CFG, mppi.DEV)
+            pt = os.path.join(mdir, f"{R}_s0_roll25.pt")
+            model = load_model(pt, cfg_of_model(pt, CFG), mppi.DEV)  # [11/19] 경사 모델은 json 의 cfg 로
             w = sim.calibrated_world(delays=dict(steer=sd), grade_by_idx=grade)
             r, log = mppi.episode(model, w, tr, seed=0, v_armed=10.0, **mppi_kw)  # 기록 랩은 정지 출발 (시작 속도 0.9 m/s)
             row = dict(rung=R, steer_delay=sd, **{k: r[k] for k in ("status", "finished", "progress_frac", "lap_time", "ey_mean",

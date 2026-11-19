@@ -23,7 +23,7 @@ import numpy as np
 import torch
 
 from . import data as D
-from .configs import ALL
+from .configs import ALL, road_of
 from .ladder import RUNG_KO, load_model, rollout
 from .train import windows
 
@@ -102,7 +102,7 @@ def main():
     L = [f"# 개루프 평가: 모델 {a.tag} (시험 파일 {', '.join(sp['test'])})", ""]
     tensors = {}
     for key, vstop, title in TEST_SETS:
-        X, Y, U = windows(D.split_segs(sp["test"], v_stop=vstop), cfg.hist, horizon=max(STEPS), stride=5)
+        X, Y, U = windows(D.split_segs(sp["test"], v_stop=vstop, road=road_of(cfg)), cfg.hist, horizon=max(STEPS), stride=5)
         Xt, Ut = torch.tensor(X, device=DEV), torch.tensor(U, device=DEV)
         tensors[key] = (Xt, Ut)
         res = {"B0_persist": metrics(np.repeat(X[:, -1:, :3], max(STEPS), 1), Y, cfg.dt)}

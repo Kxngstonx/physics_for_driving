@@ -158,7 +158,7 @@ def save_anim(fig, upd, frames, out, fps, preview):
 def run_predict(a):
     import torch
     from deep_dynamics.golf import data as D
-    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG
+    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG, cfg_of_model, road_of
     from deep_dynamics.golf.ladder import load_model
     from deep_dynamics.golf.track import best_lap
     torch.set_num_threads(4)
@@ -190,8 +190,16 @@ def run_predict(a):
     ht0 = torch.tensor(hist, dtype=torch.float32, device=dev)
     ut = torch.tensor(fut_u, dtype=torch.float32, device=dev)
     for tag in RUNGS:
-        mdl = load_model(os.path.join(RES, "models", f"{tag}_s{a.seed}_roll25.pt"), CFG, dev)
-        hh = ht0.clone()
+        pt = os.path.join(RES, "models", f"{tag}_s{a.seed}_roll25.pt")
+        cfg = cfg_of_model(pt, CFG)
+        mdl = load_model(pt, cfg, dev)
+        if road_of(cfg) == "grade":  # [11/19] 경사 모델: 같은 구간을 [bank=0, grade] 입력으로 (경사는 트랙 지도)
+            ug = np.c_[sg["u"][:, :2], np.zeros(n), D.grade_at(sg["x"], sg["y"])]
+            sug = np.concatenate([sg["s"], ug], 1)
+            hh = torch.tensor(np.stack([sug[k - H + 1:k + 1] for k in ks]), dtype=torch.float32, device=dev)
+            ut_m = torch.tensor(np.stack([ug[k + 1:k + NP] for k in ks]), dtype=torch.float32, device=dev)
+        else:
+            hh, ut_m = ht0.clone(), ut
         pose = torch.tensor(pose0, dtype=torch.float32, device=dev)
         P = []
         with torch.no_grad():  # ladder.rollout 과 같은 굴리기 + 위치 적분 (mppi.kin 과 같은 식)
@@ -203,7 +211,7 @@ def run_predict(a):
                                     pose[:, 1] + DT * (s[:, 0] * torch.sin(pm) + s[:, 1] * torch.cos(pm)), psi + DT * s[:, 2]], 1)
                 P.append(pose[:, :2].numpy())
                 if k < NP - 1:
-                    hh = torch.cat([hh[:, 1:], torch.cat([s, ut[:, k]], 1).unsqueeze(1)], 1)
+                    hh = torch.cat([hh[:, 1:], torch.cat([s, ut_m[:, k]], 1).unsqueeze(1)], 1)
         preds[tag] = np.nan_to_num(np.stack(P, 1), nan=1e4)
     miss = {tg: np.hypot(*(preds[tg][:, -1] - truth[:, -1]).T) for tg in preds}
     print("mean miss at horizon (m):", {tg: round(float(v.mean()), 2) for tg, v in miss.items()}, flush=True)

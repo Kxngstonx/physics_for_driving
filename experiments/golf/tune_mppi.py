@@ -62,7 +62,7 @@ def b_track():
 
 def run(mode, N=25):
     import torch
-    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG
+    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG, cfg_of_model
     from deep_dynamics.golf.ladder import load_model
     tr, grade, info = tune_track() if mode == "A" else b_track()
     sd = steer_delay()
@@ -71,7 +71,8 @@ def run(mode, N=25):
             d = load()
             if any(r["mode"] == mode and r.get("N", 25) == N and r["lam"] == lam and r["noise"] == nz and r["rung"] == R for r in d["runs"]):
                 continue
-            model = load_model(os.path.join(RES, "models", f"{R}_s0_roll25.pt"), CFG, mppi.DEV)
+            pt = os.path.join(RES, "models", f"{R}_s0_roll25.pt")
+            model = load_model(pt, cfg_of_model(pt, CFG), mppi.DEV)  # [11/19] 경사 모델은 json 의 cfg 로
             w = sim.calibrated_world(delays=dict(steer=sd), grade_by_idx=grade)
             res, _ = mppi.episode(model, w, tr, N=N, seed=0, record=False, i0=info["start_idx"], v_armed=10.0, lam=lam, mode=mode,
                                   sigma=tuple(nz * s for s in mppi.SIGMA_FORCE))

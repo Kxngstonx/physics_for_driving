@@ -109,11 +109,33 @@ def _filtered(name, data_dir=DATA_DIR):
     return out
 
 
+TRACK_MAP = os.path.join(ROOT, "..", "experiments", "golf", "results", "tracks", "thunderhill_boundary.npz")
+
+
 @functools.lru_cache(maxsize=None)
-def load_run(name, data_dir=DATA_DIR, min_len=MIN_LEN, v_stop=V_STOP):
+def _grade_map(path=TRACK_MAP):
+    """[11/19] 트랙 경사 지도 (track_osm.py 출력: 중앙선 ref, grade rad). 위치 (동, 북) → 경사."""
+    from scipy.spatial import cKDTree
+    path = os.path.normpath(path)
+    assert os.path.exists(path), f"{path} 없음: python -m deep_dynamics.golf.track 을 먼저 실행"
+    b = np.load(path)
+    assert "grade" in b.files, "경사가 없는 이전 트랙 파일: python -m deep_dynamics.golf.track (osm) 으로 다시 만들 것"
+    return cKDTree(b["ref"]), b["grade"].astype(np.float64)
+
+
+def grade_at(x, y):
+    """위치 (동, 북) [m] → 트랙 지도 경사 [rad, 오르막 +] (가장 가까운 중앙선 점)."""
+    tree, g = _grade_map()
+    return g[tree.query(np.c_[x, y])[1]]
+
+
+@functools.lru_cache(maxsize=None)
+def load_run(name, data_dir=DATA_DIR, min_len=MIN_LEN, v_stop=V_STOP, road="bank"):
     """한 주행 → 끊김 없는 구간 리스트 (25 Hz). 같은 프로세스 안에서는 한 번만 만든다 (반환값을 고치지 말 것).
     구간 dict: run, t, x, y, psi, s_m, s (T,3) [vx,vy,r], u (T,3) [Fxf, delta, bank], extra(dict).
-    vx < v_stop 인 곳에서 자른다 (필터를 먼저 걸고 자름: 자른 조각마다 걸면 끝부분이 흔들림)."""
+    vx < v_stop 인 곳에서 자른다 (필터를 먼저 걸고 자름: 자른 조각마다 걸면 끝부분이 흔들림).
+    road: 'bank' (이전, 데이터 bank_rad 열) | 'grade' ([11/19] u (T,4) [Fxf, delta, bank=0, grade], 경사는 트랙 지도에서)"""
+    assert road in ("bank", "grade")
     segs = []
     for filt, ex in _filtered(name, data_dir):
         edges = np.flatnonzero(np.diff(np.r_[0, (filt[:, 0] >= v_stop).astype(int), 0]))
@@ -121,8 +143,12 @@ def load_run(name, data_dir=DATA_DIR, min_len=MIN_LEN, v_stop=V_STOP):
             if j - k < min_len:
                 continue
             exs = {c: v[k:j] for c, v in ex.items()}
+            u = filt[k:j, 3:].copy()
+            if road == "grade":  # 좌우 기울기 0 (시뮬레이터·MPPI 와 같은 평평한 길), 경사 열 추가
+                u[:, 2] = 0.0
+                u = np.c_[u, grade_at(exs["posE_m"], exs["posN_m"])]
             segs.append(dict(run=name, t=exs["t_s"], x=exs["posE_m"], y=exs["posN_m"], psi=exs["yawAngle_rad"],
-                             s_m=exs["s_m"], s=filt[k:j, :3].copy(), u=filt[k:j, 3:].copy(), extra=exs))
+                             s_m=exs["s_m"], s=filt[k:j, :3].copy(), u=u, extra=exs))
     return segs
 
 
@@ -143,7 +169,8 @@ def get_split(data_dir=DATA_DIR):
     return sp
 
 
-def split_segs(names, data_dir=DATA_DIR, v_stop=V_STOP):
+def split_segs(names, data_dir=DATA_DIR, v_stop=V_STOP, road="bank"):
     """[(s, u), ...] — ladder train.windows() 입력 형식.
-    v_stop: 이 속도 미만 구간을 잘라 냄. 기본 V_STOP (정지만 제외). V_LAUNCH = 출발 구간 제외 ablation."""
-    return [(sg["s"], sg["u"]) for n in names for sg in load_run(n, data_dir, v_stop=v_stop)]
+    v_stop: 이 속도 미만 구간을 잘라 냄. 기본 V_STOP (정지만 제외). V_LAUNCH = 출발 구간 제외 ablation.
+    road: 'bank' (이전) | 'grade' (경사 채널, configs.road_of(cfg))"""
+    return [(sg["s"], sg["u"]) for n in names for sg in load_run(n, data_dir, v_stop=v_stop, road=road)]

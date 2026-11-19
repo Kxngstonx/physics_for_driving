@@ -26,7 +26,7 @@ KEYS = ("status", "finished", "progress_frac", "lap_time")
 def record(mode, N, seed=0):
     import torch
     import tune_mppi as T
-    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG
+    from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG, cfg_of_model
     from deep_dynamics.golf.ladder import load_model
     os.makedirs(VIZ, exist_ok=True)
     c = json.load(open(os.path.join(RES, "mppi_tune.json")))["chosen"][f"{mode}_{N}"]
@@ -35,7 +35,8 @@ def record(mode, N, seed=0):
         stem = os.path.join(VIZ, f"{mode}_{N}__{R}_s{seed}")
         if os.path.exists(stem + ".json"):
             continue
-        model = load_model(os.path.join(RES, "models", f"{R}_s{seed}_roll25.pt"), CFG, mppi.DEV)
+        pt = os.path.join(RES, "models", f"{R}_s{seed}_roll25.pt")
+        model = load_model(pt, cfg_of_model(pt, CFG), mppi.DEV)  # [11/19] 경사 모델은 json 의 cfg 로
         w = sim.calibrated_world(delays=dict(steer=T.steer_delay()), grade_by_idx=grade)
         res, log = mppi.episode(model, w, tr, N=N, seed=seed, record=True, i0=info["start_idx"], v_armed=10.0, mode=mode,
                                 lam=c["lam"], sigma=tuple(c["noise"] * s for s in mppi.SIGMA_FORCE))
