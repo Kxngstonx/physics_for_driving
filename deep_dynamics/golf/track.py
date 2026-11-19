@@ -1,5 +1,9 @@
 """썬더힐 West 트랙: 근사 경계, 경로 3종, 목표 속도 (docs/experiment_plan_golf.md 9-3, 9-5절).
 
+[변경 11/19 팀 결정] 기본 트랙은 track_osm.py (OSM 노면 중앙선 ± 실측 폭, GPS 고도 경사 지도)로 만든다.
+  python -m deep_dynamics.golf.track 은 이제 track_osm.build_all 을 부른다. 이 파일의 build_all(기록 주행선 ± 고정 폭)은
+  --method recorded 로 남겼고, best_lap·speed_profile·project 등은 track_osm 이 그대로 쓴다.
+
   기준선   : 20개 주행 중 평균 속도가 가장 빠른 완전한 한 바퀴의 GPS 궤적 (1 m 재표본, 평활)
   경계    : 기준선 ± 고정 폭. [변경 11/19] 기본 총 10.9 m = 사용자가 위성 지도로 잰 14곳 평균
             (docs/track_width_measurement_thunderhill.pdf, 최소 10.1 / 최대 11.6 m). 이전은 근거 없는 가정 10 m.
@@ -221,7 +225,14 @@ def build_all(runs=None, out_dir=None, mu=MU0, ax_acc=AX_ACC0, ax_dec=AX_DEC0, w
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="experiments/golf/results/tracks")
-    ap.add_argument("--width", type=float, default=10.9, help="트랙 총 폭 (m). 기본 = 위성 지도 측정 평균")
+    ap.add_argument("--method", choices=["osm", "recorded"], default="osm",
+                    help="[변경 11/19 팀 결정] osm: OSM 노면 중앙선 + 실측 폭 + GPS 고도 경사 (track_osm.py, 기본). "
+                         "recorded: 이전 방식 (기록 주행선 ± 고정 폭)")
+    ap.add_argument("--width", type=float, default=10.9, help="recorded 방식의 트랙 총 폭 (m). 기본 = 위성 지도 측정 평균")
     a = ap.parse_args()
-    _, info, _ = build_all(out_dir=a.out, width=a.width)
+    if a.method == "osm":
+        from .track_osm import build_all as build_osm
+        _, info, _ = build_osm(out_dir=a.out)
+    else:
+        _, info, _ = build_all(out_dir=a.out, width=a.width)
     print(json.dumps(info, indent=1, ensure_ascii=False))
