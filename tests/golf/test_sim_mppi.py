@@ -178,8 +178,11 @@ def test_mode_b_reward_follows_forward_progress():
 
 
 def test_track_width_is_measured_value():
+    # [11/20] OSM 트랙: 실측 14곳 위치별 폭 10.1~11.6 m, 측정 없는 곳 평균 10.9 m (track_osm.md)
     t = np.load(TRACK)
-    assert np.allclose(t["width_l"] + t["width_r"], 10.9)
+    w = t["width_l"] + t["width_r"]
+    assert w.min() > 10.0 and w.max() < 11.7
+    assert abs(np.median(w) - 10.9) < 0.05
 
 
 def test_tuning_select_groups_by_horizon(tmp_path=None):
