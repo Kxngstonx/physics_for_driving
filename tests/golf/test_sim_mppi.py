@@ -1,0 +1,161 @@
+"""시뮬레이터(sim.py)·MPPI 힘 입력(mppi.py) 점검 (docs/experiment_plan_golf.md 4-4, 8-2, 9-2절)."""
+import json
+import math
+
+import numpy as np
+import torch
+
+from deep_dynamics.golf import mppi, sim
+from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG
+
+TRACK = "experiments/golf/results/tracks/thunderhill_recorded.npz"
+# 바퀴 4개의 회전 관성이 더하는 겉보기 질량 (가속할 때 바퀴도 돌려야 함)
+M_EQ = CFG.m + 4 * sim.golf_params().I_y_w / sim.WHEEL_R ** 2
+
+
+def _run(v0, F, delta=0.0, steps=25, **kw):
+    w = sim.World(cap=False, **kw)
+    w.reset(0.0, 0.0, 0.0, v0)
+    for _ in range(steps):
+        s = w.step(F, delta)
+    return w, s
+
+
+_res = sim.road_load
+
+
+def test_params_are_golf_values():
+    p = sim.golf_params()
+    spec = json.load(open(sim.SPECS))["GOLF"]["final"]
+    assert (p.m, p.a, p.b, p.R_w, p.T_se, p.T_sb) == (CFG.m, CFG.lf, CFG.lr, sim.WHEEL_R, 1.0, CFG.brake_front_share)
+    assert abs(p.m_s + p.m_uf + p.m_ur - p.m) < 1e-9
+    Fz_f = p.m * sim.G * p.b / (p.a + p.b)
+    assert abs(-p.tire_f.p_ky1 * Fz_f - spec["Cf_lin"]) < 1e-6 * spec["Cf_lin"]
+    assert p.longitudinal.a_max * p.longitudinal.v_switch / 30.0 > 100  # Escort 가속 제한(30 m/s 에서 1.8 m/s²)이 풀림
+    p, p2 = sim.golf_params(1.0), sim.golf_params(0.9)
+    assert abs(p2.tire_f.p_dy1 - 0.9 * p.tire_f.p_dy1) < 1e-12 and abs(p2.tire_r.p_dx1 - 0.9 * p.tire_r.p_dx1) < 1e-12
+
+
+def test_calibrated_track_and_roll():
+    """[결정 11/19] Golf 윤거, 롤 기울기 0.30 도/(m/s²) (Escort 그대로면 약 1.0 → 첫 큰 코너에서 전복)."""
+    p = sim.golf_params()
+    assert (p.T_f, p.T_r) == (sim.TRACK_F, sim.TRACK_R)
+    cal = sim.load_calibration()
+    grad, _ = sim.roll_gradient(cal["mu_scale"], cal["k_roll"])
+    assert abs(grad - 0.30) < 0.02, grad
+    assert sim.roll_gradient(cal["mu_scale"], None)[0] > 0.8  # Escort 서스펜션 그대로면 약 1.0
+
+
+def test_drive_force_gives_expected_acceleration_and_is_not_clipped():
+    """Fxf → 가속도 변환 + Escort 가속 제한 해제: 30 m/s 에서 4.3 kN (약 2.6 m/s²) 이 잘리지 않음."""
+    for v0, F in ((20.0, 2000.0), (30.0, 4300.0)):
+        _, s = _run(v0, F)
+        a = s[0] - v0
+        exp = (F - _res(v0 + 0.5 * a)) / M_EQ
+        assert abs(a - exp) < 0.03 * abs(exp), (v0, a, exp)
+
+
+def test_brake_force_is_front_share_of_total():
+    """Fxf < 0 은 앞바퀴 제동력 → 전체 제동력 = Fxf / 0.658."""
+    v0, F = 25.0, -3000.0
+    _, s = _run(v0, F)
+    a = s[0] - v0
+    exp = (F / CFG.brake_front_share - _res(v0 + 0.5 * a)) / M_EQ
+    assert abs(a - exp) < 0.03 * abs(exp), (a, exp)
+
+
+def test_straight_cruise_has_no_lateral_motion():
+    v0 = 20.0
+    _, s = _run(v0, _res(v0), steps=50)
+    # 완전한 0 은 아님: 2초 뒤 vy 5e-4 m/s, r 8e-4 rad/s (빌려온 Escort 서스펜션·타이어 식의 작은 비대칭 [확인]). 선회의 1/300 수준
+    assert abs(s[0] - v0) < 0.05 and abs(s[1]) < 0.01 and abs(s[2]) < 0.005
+
+
+def test_understeer_like_golf_data():
+    """25 m/s 정상 선회의 회전 반응 / 운동학 값: Golf 데이터 0.44~0.48 (20~35 m/s). 원본 타이어면 약 0.88."""
+    _, s = _run(25.0, _res(25.0), delta=0.03, steps=100)
+    ratio = s[2] / (s[0] * 0.03 / (CFG.lf + CFG.lr))
+    assert 0.35 < ratio < 0.65, ratio
+
+
+def test_abs_keeps_wheels_rolling_when_braking_in_a_turn():
+    w, s = _run(30.0, -5000.0, delta=0.01, steps=50)
+    wheel = np.array(w.x[23:27]) * sim.WHEEL_R
+    assert np.isfinite(s).all() and (wheel > 0.5 * s[0]).all(), wheel
+
+
+def test_force_cap_table():
+    vg, fg = sim.force_cap_table()
+    t = np.genfromtxt(sim.FORCE_TABLE, delimiter=",", names=True)
+    assert abs(sim.force_cap(9.0) - t["F_p99_N"][t["v_lo"] == 8][0]) < 1.0  # 8~10 m/s 구간 상위 1% (구간 가운데)
+    hi = sim.force_cap(np.array([34.0, 40.0, 50.0]))
+    assert (np.diff(hi) < 0).all()  # 32 m/s 이상은 일정 출력 → 속도에 반비례
+    assert abs(hi[1] * 40.0 - hi[2] * 50.0) < 0.01 * hi[2] * 50.0  # 격자 사이는 선형 보간이라 1% 이내
+
+
+class _Toy(torch.nn.Module):
+    """다음 vx = 지금 vx + 힘/1000 (조향 무시). MPPI 비용 계산만 보려는 가짜 모델."""
+    def forward(self, h):
+        last = h[:, -1]
+        return torch.stack([last[:, 0] + last[:, 3] / 1000.0, torch.zeros_like(last[:, 0]), torch.zeros_like(last[:, 0])], 1)
+
+
+def _one_act(mode):
+    tr = mppi.Track(TRACK)
+    m = mppi.MPPI(_Toy(), tr, K=256, N=10, seed=0, mode=mode, use_graph=False)
+    m.s_now = torch.tensor([30.0, 0.0, 0.0], device=mppi.DEV)
+    pose = torch.tensor([float(tr.x[0]), float(tr.y[0]), float(tr.psi[0])], device=mppi.DEV)
+    hist = torch.tensor([30.0, 0.0, 0.0, 300.0, 0.0, 0.0], device=mppi.DEV).repeat(mppi.H - 1, 1)
+    m.act(hist, pose, 0, torch.tensor([300.0, 0.0], device=mppi.DEV))
+    return m
+
+
+def test_mppi_force_samples_respect_speed_dependent_cap():
+    m = _one_act("A")
+    F = m.bUc[:, :, 0]
+    vx = 30.0 + torch.cumsum(F, 1) / 1000.0  # 가짜 모델이 굴린 속도 (k 번째 입력은 k 스텝 전 속도에서 적용)
+    v_before = torch.cat([torch.full_like(vx[:, :1], 30.0), vx[:, :-1]], 1)
+    cap = torch.tensor(sim.force_cap(v_before.cpu().numpy()), device=F.device, dtype=F.dtype)
+    assert (F <= cap + 1.0).all() and (F >= mppi.U_LO_FORCE[0] - 1e-3).all()
+
+
+def test_mode_b_rewards_progress():
+    m = _one_act("B")
+    progress = m.bUc[:, :, 0].mean(1)  # 가짜 모델에서는 힘이 클수록 더 멀리 감
+    c = np.corrcoef(progress.cpu().numpy(), m.bcost.cpu().numpy())[0, 1]
+    assert c < -0.5, c
+
+
+def test_actuator_delays_per_path():
+    """브레이크 → 구동으로 바뀔 때: 엔진 경로(지연 0)는 바로, 브레이크 경로는 자기 지연(35 ms)만큼 남았다가 풀림."""
+    h = 1e-3
+    a = sim.Actuator(dict(brake=(0.035, 0.0), engine=(0.0, 0.0)), h)
+    a.reset(-3000.0)
+    out = [a.force_step(2000.0) for _ in range(60)]
+    assert abs(out[0] - (2000.0 - 3000.0)) < 1e-6  # 처음 35 ms: 엔진 2000 + 아직 남은 브레이크 −3000
+    assert abs(out[-1] - 2000.0) < 1e-6  # 35 ms 뒤: 브레이크 풀림
+    b = sim.Actuator(dict(brake=(0.035, 0.0), engine=(0.0, 0.0)), h)
+    b.reset(2000.0)
+    out = [b.force_step(-3000.0) for _ in range(60)]
+    assert abs(out[0] - 0.0) < 1e-6 and abs(out[-1] + 3000.0) < 1e-6  # 엔진은 바로 0, 브레이크는 35 ms 뒤
+
+
+def test_fit_coefficients_reach_params():
+    """[11/19] 데이터로 맞추는 배율(ky_f, ky_r, rby_f)이 축별 타이어 계수에 들어가는지."""
+    p0, p1 = sim.golf_params(), sim.golf_params(ky_f=1.3, ky_r=0.8, rby_f=2.0)
+    assert abs(p1.tire_f.p_ky1 - 1.3 * p0.tire_f.p_ky1) < 1e-9 and abs(p1.tire_r.p_ky1 - 0.8 * p0.tire_r.p_ky1) < 1e-9
+    assert abs(p1.tire_f.r_by1 - 2.0 * p0.tire_f.r_by1) < 1e-9 and p1.tire_r.r_by1 == p0.tire_r.r_by1
+
+
+def test_episode_starts_at_i0():
+    tr = mppi.Track(TRACK)
+    i0 = 300
+    res, log = mppi.episode(_Toy(), sim.World(), tr, K=64, N=5, max_time=0.2, use_graph=False, i0=i0)
+    assert abs(log["idx"][0] - i0) < 5, log["idx"][:3]
+
+
+def test_episode_time_counted_without_record():
+    """11/19 결함 재발 방지: record=False 일 때 랩타임(time_s)이 0 으로 나오던 문제."""
+    tr = mppi.Track(TRACK)
+    res, _ = mppi.episode(_Toy(), sim.World(), tr, K=64, N=5, max_time=0.4, use_graph=False, record=False)
+    assert abs(res["time_s"] - 0.4) < 0.05, res["time_s"]
