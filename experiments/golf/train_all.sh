@@ -12,8 +12,6 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO"
 export PY="${PY:-/home/okdol/miniconda3/envs/deep_dynamics/bin/python}"
 export OUT="${OUT:-experiments/golf/results/models}"
-# [변경 11/20, 사용자 결정] 모든 학습·평가에 종경사 입력. 경사 없는 이전 설정은 CFG=GOLF_THUNDERHILL 로만
-export CFG="${CFG:-GOLF_THUNDERHILL_G}"
 export LOG="${LOG:-experiments/golf/results/logs}"
 mkdir -p "$OUT" "$LOG"
 case "${1:-main}" in
@@ -24,13 +22,8 @@ case "${1:-main}" in
 esac
 job() {  # job R4 0
   local tag="$1_s$2_$SUF"
-  if [ -f "$OUT/$tag.json" ]; then
-    # 이미 있는 모델은 같은 설정(CFG)으로 학습한 것만 '끝남'으로 본다. 다른 설정이면 덮어쓰지도 건너뛰지도 않고 멈춤
-    local have; have=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1])).get('cfg'))" "$OUT/$tag.json")
-    if [ "$have" = "$CFG" ]; then echo "skip (done): $tag"; return; fi
-    echo "FAILED $tag: $OUT/$tag.json 은 cfg=$have 로 학습됨 (지금 CFG=$CFG). 이전 모델을 다른 폴더로 옮긴 뒤 다시 실행"; return
-  fi
-  if bash experiments/limited.sh "$PY" -m deep_dynamics.golf.run_train "$1" --seed "$2" --roll $ROLL $EXTRA --cfg "$CFG" --out $OUT > "$LOG/train_$tag.log" 2>&1; then
+  if [ -f "$OUT/$tag.json" ]; then echo "skip (done): $tag"; return; fi
+  if bash experiments/limited.sh "$PY" -m deep_dynamics.golf.run_train "$1" --seed "$2" --roll $ROLL $EXTRA --out $OUT > "$LOG/train_$tag.log" 2>&1; then
     echo "ok $tag"
   else
     echo "FAILED $tag (see $LOG/train_$tag.log)"
@@ -44,6 +37,6 @@ want=18
 n=$(ls $OUT/R?_s?_$SUF.json 2>/dev/null | wc -l)
 echo "trained models ($SUF): $n / $want"
 [ "$n" -eq "$want" ] || { echo "아직 $n / $want — 평가는 18개가 모두 끝난 뒤 실행"; exit 0; }
-bash experiments/limited.sh "$PY" -m deep_dynamics.golf.evaluate --tag $SUF --cfg "$CFG" > "$LOG/eval_$SUF.log" 2>&1 \
+bash experiments/limited.sh "$PY" -m deep_dynamics.golf.evaluate --tag $SUF > "$LOG/eval_$SUF.log" 2>&1 \
   && echo "evaluated $SUF" || { echo "EVAL FAILED $SUF"; exit 1; }
 echo "ALL DONE ($1)"
