@@ -136,7 +136,9 @@ def lap_info(run=None):
 
 
 def recorded_track(info=None):
-    """기록 주행선 트랙 + 기록 속도(랩 info, 기본은 2023-10_8 가장 빠른 랩)를 위치별로 + 위치별 경사."""
+    """그 랩의 기록 주행선 트랙 + 그 랩의 기록 속도를 위치별로 + 위치별 경사 (랩 info, 기본은 2023-10_8 가장 빠른 랩).
+    [변경 11/20] 경로와 목표 속도를 같은 랩에서: 검증 랩은 thunderhill_recorded.npz, 다른 랩은 thunderhill_recorded_<랩>.npz
+    (track_osm.build_all 이 만듦, 경로 0번 = 랩 출발점)."""
     from deep_dynamics.golf import mppi
     import torch
     info = info or lap_info()
@@ -146,7 +148,7 @@ def recorded_track(info=None):
     ts, sl = slope_of(info["run"])
     px, py = df["posE_m"].to_numpy()[m], df["posN_m"].to_numpy()[m]
     v = np.hypot(df["Vx_mps"].to_numpy()[m], df["Vy_mps"].to_numpy()[m])
-    tr = mppi.Track(TRACK)
+    tr = mppi.Track(TRACK if info["run"] == lap_info()["run"] else TRACK.replace(".npz", f"_{info['run']}.npz"))
     from deep_dynamics.golf.track import project
     # 표본마다 트랙 위치를 찾고 위치별 평균. 출발선 근처는 랩 처음(출발 중)과 끝(달리는 중)이 같은 위치에 겹치므로,
     # 랩 앞쪽 절반의 표본은 트랙 앞쪽 절반에만, 뒤쪽 절반은 뒤쪽 절반에만 쓴다 (11/19: 이전처럼 트랙 점마다 가장 가까운 표본을
