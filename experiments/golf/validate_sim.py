@@ -122,7 +122,9 @@ def stage_replay(res):
         t0 = time.time()
         out[key] = metrics(W, replay(W, mu))
         print(key, json.dumps({k: v for k, v in out[key].items()}, ensure_ascii=False)[:400], f"{time.time() - t0:.0f}s", flush=True)
-    ev = json.load(open(os.path.join(os.path.dirname(OUT), "eval_roll25.json")))
+    # 학습 모델의 개루프 결과(참고용으로 함께 저장)는 있을 때만. [11/20] 이전 모델·평가 결과를 지워 없을 수 있음
+    evp = os.path.join(os.path.dirname(OUT), "eval_roll25.json")
+    ev = json.load(open(evp)) if os.path.exists(evp) else {}
     res["replay"] = dict(files=sp["test"], mu=mu, **out, models_1s=ev.get("openloop", {}).get("all"))
 
 
