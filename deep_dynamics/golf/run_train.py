@@ -28,7 +28,7 @@ ap.add_argument("--max_epochs", type=int, default=MAX_EPOCHS)
 ap.add_argument("--vmin", type=float, default=D.V_STOP, help=f"이 속도 미만 제외 (학습·검증). {D.V_LAUNCH:g} = 출발 구간 제외")
 ap.add_argument("--lr", type=float, default=1e-3)
 ap.add_argument("--cfg", default="GOLF_THUNDERHILL_G",
-                help="[변경 11/20, 사용자 결정] 기본 = 종경사 입력 포함. GOLF_THUNDERHILL(경사 없음)은 이전 결과 재현용")
+                help="[변경 11/20] 기본 = 종경사 입력 포함")
 ap.add_argument("--out", default="experiments/golf/results/models")
 a = ap.parse_args()
 
