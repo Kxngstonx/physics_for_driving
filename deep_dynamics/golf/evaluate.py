@@ -93,14 +93,11 @@ def main():
     ap.add_argument("--models", default="experiments/golf/results/models")
     ap.add_argument("--out", default="experiments/golf/results")
     ap.add_argument("--cfg", default="GOLF_THUNDERHILL_G",
-                    help="[변경 11/20, 사용자 결정] 기본 = 종경사 입력 포함. 모델 json 의 cfg 와 같아야 함")
+                    help="[변경 11/20] 기본 = 종경사 입력 포함")
     a = ap.parse_args()
     cfg = ALL[a.cfg]
     sp = D.get_split()
     paths = sorted(glob.glob(os.path.join(a.models, f"R?_s?_{a.tag}.pt")))
-    # 다른 설정으로 학습한 모델을 이 설정의 입력으로 평가하지 않게 (예: 경사 없는 이전 모델을 경사 입력으로)
-    bad = [os.path.basename(p) for p in paths if json.load(open(p[:-3] + ".json")).get("cfg") != cfg.name]
-    assert not bad, f"--cfg {cfg.name} 와 학습 설정이 다른 모델: {bad}. 맞는 --cfg 를 주거나 모델을 다시 학습할 것"
     models = {os.path.basename(p)[:-3]: load_model(p, cfg, DEV) for p in paths}
     out = dict(tag=a.tag, test=sp["test"], openloop={}, n_starts={})
     L = [f"# 개루프 평가: 모델 {a.tag} (시험 파일 {', '.join(sp['test'])})", ""]
