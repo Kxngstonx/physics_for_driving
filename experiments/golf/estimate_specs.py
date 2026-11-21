@@ -134,20 +134,41 @@ def av21():
 
 
 # ---------------------------------------------------------------- Golf
+LON_COLS = ["Vx_mps", "Vy_mps", "yawRate_radps", "roadWheelAngle_rad", "F_drive", "F_brake_f", "F_brake_r", "grade_rad"]
+LAG = 20  # 힘이 가속도보다 100 ms 앞섬 [확인: 상관이 가장 큰 시간 차]
+
+
+def golf_lon_samples(name, extra_grade=False):
+    """한 파일 → 종방향 회귀용 표본 (2 Hz 평활, 힘은 LAG 만큼 늦춤, 앞뒤 2초 버림, 8칸마다).
+    extra_grade: [11/21 재확인] 경사 두 가지를 더한다 (오르막 +, rad)
+      grade_vu  = 관성 센서 위아래 속도 / 수평 속력 (0.5 Hz 2차 저역 통과, validate_sim.slope_of 와 같은 계산)
+      grade_osm = 트랙 경사 지도 (data.grade_at, track_osm 출력)"""
+    df = D.read_raw(name)
+    f = {c: S.smooth(df[c].to_numpy(float), 2.0, 200) for c in LON_COLS}
+    f["ax"] = S.deriv(f["Vx_mps"], 200)
+    for c in ["F_drive", "F_brake_f", "F_brake_r"]:
+        f[c] = np.r_[np.full(LAG, f[c][0]), f[c][:-LAG]]
+    if extra_grade:
+        vu = D.lowpass(df["Vu_mps"].to_numpy(), cutoff=0.5, order=2)
+        sp = np.hypot(df["Ve_mps"].to_numpy(), df["Vn_mps"].to_numpy())
+        f["grade_vu"] = np.arctan2(vu, np.maximum(sp, 1.0))
+        f["posE_m"], f["posN_m"] = df["posE_m"].to_numpy(float), df["posN_m"].to_numpy(float)
+    out = {c: v[400:-400:8] for c, v in f.items()}
+    if extra_grade:
+        out["grade_osm"] = D.grade_at(out.pop("posE_m"), out.pop("posN_m"))
+    return out
+
+
 def golf():
-    cols = ["Vx_mps", "Vy_mps", "yawRate_radps", "roadWheelAngle_rad", "F_drive", "F_brake_f", "F_brake_r", "grade_rad"]
-    A = {c: [] for c in cols + ["ax"]}
+    A = {c: [] for c in LON_COLS + ["ax"]}
     Lc = {c: [] for c in ["Vx_mps", "Vy_mps", "yawRate_radps", "roadWheelAngle_rad", "vyd", "rd"]}
-    lag = 20  # 힘이 가속도보다 100 ms 앞섬 [확인: 상관이 가장 큰 시간 차]
+    lag = LAG
     sp = D.get_split()
     for n in sp["train"]:  # 학습 파일만 사용 (시험 파일 정보가 제원에 섞이지 않게)
-        df = D.read_raw(n)
-        f = {c: S.smooth(df[c].to_numpy(float), 2.0, 200) for c in cols}
-        f["ax"] = S.deriv(f["Vx_mps"], 200)
-        for c in ["F_drive", "F_brake_f", "F_brake_r"]:
-            f[c] = np.r_[np.full(lag, f[c][0]), f[c][:-lag]]
+        f = golf_lon_samples(n)
         for c in A:
-            A[c].append(f[c][400:-400:8])
+            A[c].append(f[c])
+        df = D.read_raw(n)
         g = {c: S.smooth(df[c].to_numpy(float), 5.0, 200) for c in ["Vx_mps", "Vy_mps", "yawRate_radps", "roadWheelAngle_rad"]}
         g["vyd"], g["rd"] = S.deriv(g["Vy_mps"], 200), S.deriv(g["yawRate_radps"], 200)
         for c in Lc:
@@ -222,5 +243,62 @@ def main():
     print("\n".join(L))
 
 
+GRADES = ("grade_rad", "grade_vu", "grade_osm")
+
+
+def recheck():
+    """[11/21 사용자 승인] 질량·효율 재확인. 방법(직진 조건, 2단계 회귀, LAG)은 그대로 두고 비교만 더한다.
+    경사 3가지(데이터 grade_rad 열 = 참고, 관성 센서 Vu, OSM 지도) × 파일 집합 2가지(학습 14, 전체 20) + 파일별 값.
+    앞 제동 몫 0.658 → 0.75 처럼 일부 표본·잘못된 경사에 끌린 값인지 확인하려는 것. specs.json 은 건드리지 않는다.
+    → results/specs_recheck.json, specs_recheck.md"""
+    sp = D.get_split()
+    names = D.available()
+    per = {n: golf_lon_samples(n, extra_grade=True) for n in names}
+
+    def fit(ns, grade):
+        A = {c: np.concatenate([per[n][c] for n in ns]) for c in per[ns[0]]}
+        st = straight(A["Vx_mps"], A["roadWheelAngle_rad"], A["yawRate_radps"])
+        a_eff = A["ax"] - A["Vy_mps"] * A["yawRate_radps"] + (G * np.sin(A[grade]) if grade else 0.0)  # 오르막이면 중력이 감속
+        Fb = A["F_brake_f"] + A["F_brake_r"]
+        return two_stage(A["Vx_mps"][st], a_eff[st], Fb[st], A["F_drive"][st])
+
+    res = dict(train=sp["train"], all=names, pooled={}, per_file={})
+    for gr in (None,) + GRADES:
+        key = gr or "no_grade"
+        res["pooled"][key] = dict(train=fit(sp["train"], gr), all=fit(names, gr))
+        res["per_file"][key] = {n: fit([n], gr) for n in names}
+    # 경사 원천끼리 일치 정도 (직진 표본, 전체 파일)
+    A = {c: np.concatenate([per[n][c] for n in names]) for c in ["Vx_mps", "roadWheelAngle_rad", "yawRate_radps"] + list(GRADES)}
+    st = straight(A["Vx_mps"], A["roadWheelAngle_rad"], A["yawRate_radps"])
+    res["grade_agreement"] = {f"{a}~{b}": dict(corr=float(np.corrcoef(A[a][st], A[b][st])[0, 1]),
+                                               rms_deg=float(np.degrees(np.sqrt(np.mean((A[a][st] - A[b][st]) ** 2)))))
+                              for a, b in (("grade_vu", "grade_osm"), ("grade_rad", "grade_vu"), ("grade_rad", "grade_osm"))}
+    json.dump(res, open(os.path.join(OUT, "specs_recheck.json"), "w"), indent=1, default=float)
+
+    q = lambda v: np.nanpercentile(v, [0, 25, 50, 75, 100])  # 제동 표본 0 인 파일(m 계산 안 됨)은 뺀다
+    L = ["# 질량·구동계 효율 재확인 (11/21)", "", "방법은 specs.json 과 같다 (직진, 2단계 회귀). 바꾼 것: 경사 원천, 파일 집합. 기존 값: m 1496.9 kg, η 0.699 (grade_rad 비교 후 '경사 없음' 채택, 학습 파일).", "",
+         "## 1. 모은 표본 (pooled)", "", "| 경사 | 파일 | m (kg) | η | 제동 표본 | 구동 표본 | 제동 잔차 (N) | 구동 잔차 (N) |", "|---|---|---|---|---|---|---|---|"]
+    for key, d in res["pooled"].items():
+        for fs, v in d.items():
+            L.append(f"| {key} | {fs} | {v['m']:.0f} | {v['eta']:.3f} | {v['n_brake']} | {v['n_drive']} | {v['rms_brake_N']:.0f} | {v['rms_drive_N']:.0f} |")
+    L += ["", "## 2. 파일별 (최소 / 25% / 중앙 / 75% / 최대)", "", "| 경사 | 대상 파일 | m (kg) | η |", "|---|---|---|---|"]
+    for key, d in res["per_file"].items():
+        for lab, keep in (("제동 표본 1개 이상", 1), ("제동 표본 20개 이상", 20)):
+            vs = [v for v in d.values() if v["n_brake"] >= keep]
+            L.append(f"| {key} | {lab} ({len(vs)}개) | {' / '.join(f'{x:.0f}' for x in q([v['m'] for v in vs]))} | "
+                     f"{' / '.join(f'{x:.3f}' for x in q([v['eta'] for v in vs]))} |")
+    L += ["", "파일별 값 (경사 = grade_vu):", "", "| 파일 | 분할 | m | η | 제동 표본 |", "|---|---|---|---|---|"]
+    split_of = {n: k for k in ("train", "val", "test") for n in sp[k]}
+    for n, v in res["per_file"]["grade_vu"].items():
+        L.append(f"| {n} | {split_of.get(n, '-')} | {v['m']:.0f} | {v['eta']:.3f} | {v['n_brake']} |")
+    L += ["", "## 3. 경사 원천끼리 일치 (직진 표본)", "", "| 비교 | 상관 | RMS 차이 (도) |", "|---|---|---|"]
+    L += [f"| {k} | {v['corr']:.3f} | {v['rms_deg']:.3f} |" for k, v in res["grade_agreement"].items()]
+    open(os.path.join(OUT, "specs_recheck.md"), "w", encoding="utf-8").write("\n".join(L) + "\n")
+    print("\n".join(L))
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == "recheck":
+        recheck()
+    else:
+        main()
