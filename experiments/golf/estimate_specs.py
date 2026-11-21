@@ -141,7 +141,7 @@ LAG = 20  # 힘이 가속도보다 100 ms 앞섬 [확인: 상관이 가장 큰 �
 def golf_lon_samples(name, extra_grade=False):
     """한 파일 → 종방향 회귀용 표본 (2 Hz 평활, 힘은 LAG 만큼 늦춤, 앞뒤 2초 버림, 8칸마다).
     extra_grade: [11/21 재확인] 경사 두 가지를 더한다 (오르막 +, rad)
-      grade_vu  = 관성 센서 위아래 속도 / 수평 속력 (0.5 Hz 2차 저역 통과, validate_sim.slope_of 와 같은 계산)
+      grade_vu  = 관성 센서 위아래 속도 / 수평 속력 (0.5 Hz 2차 저역 통과, 11/18~11/20 시뮬레이터가 쓰던 경사)
       grade_osm = 트랙 경사 지도 (data.grade_at, track_osm 출력)"""
     df = D.read_raw(name)
     f = {c: S.smooth(df[c].to_numpy(float), 2.0, 200) for c in LON_COLS}

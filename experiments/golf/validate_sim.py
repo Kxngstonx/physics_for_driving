@@ -8,10 +8,10 @@
 
 재생: 기록된 상태(vx, vy, r, 조향, 위치·방향)로 시작해 기록된 Fxf·조향을 넣는다. 지연·구동력 상한은 넣지 않는다
 (기록값은 이미 실제로 작용한 값). 조향은 0.04초 동안 다음 기록값까지 일정한 속도로 움직인다.
-경사: 관성 센서 고도 변화율 Vu / 속력 (0.5 Hz 저역 통과). 데이터의 grade_rad 는 고도 변화와 맞지 않아 쓰지 않음 (sim.py).
+경사: [변경 11/21 사용자 결정] OSM 경사 지도 (data.grade_at, 경로는 트랙 npz 의 grade) — 학습 데이터·MPPI 와 같은 원천.
+      이전(11/18~11/20)은 관성 센서 Vu / 속력이었다. 데이터의 grade_rad 는 고도 변화와 맞지 않아 쓰지 않음 (sim.py).
 출력: experiments/golf/results/sim/validation.json (단계별 키), validation.md, validation_*.png
 """
-import functools
 import json
 import math
 import os
@@ -41,23 +41,13 @@ def save_json(d):
     json.dump(d, open(JS, "w"), indent=1)
 
 
-@functools.lru_cache(maxsize=None)
-def slope_of(name):
-    """파일 → (시각, 경사 rad). 관성 센서 Vu / 속력 (0.5 Hz 2차 저역 통과)."""
-    df = D.read_raw(name)
-    vu = D.lowpass(df["Vu_mps"].to_numpy(), cutoff=0.5, order=2)
-    sp = np.hypot(df["Ve_mps"].to_numpy(), df["Vn_mps"].to_numpy())
-    return df["t_s"].to_numpy(), np.arctan2(vu, np.maximum(sp, 1.0))
-
-
 def windows(names, horizon, stride=25):
     """(파일 단위로 나눈) 구간에서 재생 시작점. 각 항목: 시작 상태, 입력열, 정답열, 경사열."""
     W = []
     for n in names:
-        ts, sl = slope_of(n)
         for sg in D.load_run(n):
-            s, u, t, x, y = sg["s"], sg["u"], sg["t"], sg["x"], sg["y"]
-            g = np.interp(t, ts, sl)
+            s, u, x, y = sg["s"], sg["u"], sg["x"], sg["y"]
+            g = D.grade_at(x, y)  # [11/21] OSM 경사 지도 (모델 입력과 같은 원천)
             for k in range(0, len(s) - horizon - 1, stride):
                 hd = math.atan2(y[k + 1] - y[k], x[k + 1] - x[k])  # 진행 방향 → 차 방향 = 진행 방향 − 옆미끄럼각
                 psi = hd - math.atan2(s[k, 1], s[k, 0])
@@ -145,7 +135,6 @@ def recorded_track(info=None):
     df = D.read_raw(info["run"])
     t = df["t_s"].to_numpy()
     m = (t >= info["t0"]) & (t <= info["t0"] + info["lap_time"])
-    ts, sl = slope_of(info["run"])
     px, py = df["posE_m"].to_numpy()[m], df["posN_m"].to_numpy()[m]
     v = np.hypot(df["Vx_mps"].to_numpy()[m], df["Vy_mps"].to_numpy()[m])
     tr = mppi.Track(TRACK if info["run"] == lap_info()["run"] else TRACK.replace(".npz", f"_{info['run']}.npz"))
@@ -162,7 +151,7 @@ def recorded_track(info=None):
     pos = np.arange(n)
     per = lambda val: np.interp(pos, pos[has], (np.bincount(idx[keep], weights=val[keep], minlength=n)[has] / cnt[has]))
     tr.vref = torch.tensor(per(v), dtype=torch.float32, device=mppi.DEV)
-    grade = per(sl[m])
+    grade = tr.np["grade"]  # [11/21] OSM 경사 지도를 이 경로에 투영한 값 (track_osm.make_path). 이전: 이 랩의 Vu 경사 위치별 평균
     info = dict(info, start_idx=int(idx[0]))  # 이 랩이 실제로 출발한 트랙 위치 (주행도 여기서 시작)
     return tr, grade, info
 
@@ -180,6 +169,7 @@ FREE = dict(look_t=0.8, look_min=6.0, look_max=30.0, k_ey=0.02, ki_ey=0.01, kp_v
 def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
     """tr: mppi.Track (vref = 목표 속도, 1 m 간격). world: sim.World (reset·set_pos·step·pose).
     트랙 위치 i0 에서 vref[i0] 속도로 시작해 한 바퀴 (정지 출발이면 vref[i0] ≈ 0.5~1 m/s)."""
+    from deep_dynamics.golf import mppi
     P = np.c_[tr.np["x"], tr.np["y"]]
     psi_t, vref, n = tr.np["psi"], tr.vref.detach().cpu().numpy().astype(float), len(P)
     wl, wr = tr.np["width_l"], tr.np["width_r"]
@@ -205,7 +195,7 @@ def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
         if d < n / 2:
             prog += d
         last = i
-        if abs(ey) > (wl[i] if ey > 0 else wr[i]) + 2.0:
+        if abs(ey) > (wl[i] if ey > 0 else wr[i]) + mppi.OFF_TRACK_M:  # [11/21] 팀 기준 0.9 m (이전 2.0 m), mppi.episode 와 같음
             status = "off_track"
             break
         armed = armed or vx >= v_armed

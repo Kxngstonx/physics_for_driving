@@ -8,8 +8,10 @@
   - [결정 11/19] 윤거 Golf 공개 제원, 롤 강성·마찰 배율은 calibrate_sim.py 로 보정 (calibration.json). calibrated_world() 로 씀
 이 파일의 rhs() 가 다물체 식 위에 더하는 것:
   - 굴림·공기 저항 road_load(v) = Cr0 + Cr2·v² (원본 다물체 모델에는 없음). 값은 질량 추정에 쓴 가정값 (configs)
-  - 종경사의 중력 성분 −g·sin(경사). 경사는 데이터의 grade_rad 열이 아니라 관성 센서 고도 변화(Vu/속도)로 구함
-    (grade_rad 는 고도 변화와 상관 −0.09 로 맞지 않음 [확인 11/18]). 횡경사는 넣지 않음 (평평한 길)
+  - 종경사의 중력 성분 −g·sin(경사). 경사 값은 부르는 쪽이 set_grade / set_pos(grade_by_idx) 로 넣는다.
+    [변경 11/21] 원천은 OSM 경사 지도 (validate_sim: data.grade_at, 트랙 npz 의 grade) — 학습 데이터·MPPI 와 같음.
+    이전은 관성 센서 고도 변화(Vu/속도). 데이터의 grade_rad 열은 고도 변화와 상관 −0.09 로 맞지 않아 쓰지 않음 [확인 11/18].
+    횡경사는 넣지 않음 (평평한 길)
 
 입력 변환 (패키지 식: 입력 가속도 a → 엔진 토크 m·R_w·a·T_se 또는 브레이크 토크 m·R_w·a·T_sb):
   앞바퀴 힘 Fxf ≥ 0 → a = Fxf / m        (T_se = 1, 앞바퀴굴림)
