@@ -18,20 +18,16 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from deep_dynamics.golf import data as D  # noqa: E402
-from deep_dynamics.golf import sim  # noqa: E402
+from deep_dynamics.golf import golf_specs, sim  # noqa: E402
 
-ROLL_TARGET = 0.30  # 도 / (m/s²) [가정]: 현가 센서 추정 0.23(단위 cm 가정)과 일반 승용차 0.3~0.6 이 겹치는 값
+ROLL_TARGET = golf_specs.value("roll_gradient_target")  # 도/(m/s²), 가정값 (근거는 specs.json)
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "sim", "calibration.json")
 
 
 def ay_p99():
-    """데이터 옆 가속도 상위 1% (20개 파일).
-    [변경 11/21 사용자 승인] vx·r → 실제 옆 가속도 dvy/dt + vx·r. 근거: vx·r 은 차가 옆으로 미끄러지는 속도의 변화(dvy/dt)를
-    빼먹는다. vx·r 상위 1% 표본은 회전이 빠르게 바뀌는 순간(회전 가속 평균 0.51 rad/s²)이라 실제 옆 가속도는 더 작다
-    (vx·r 상위 1% 1.18 g, 실제 1.08 g, 그 표본들의 실제 평균 1.05 g). 시뮬레이터 쪽은 정상 선회(dvy/dt = 0)에서 재므로
-    두 정의가 같아지는 실제 옆 가속도로 맞춰야 한다. 독립 확인: 같은 차 데이터에 Fiala 곡선을 맞춘 축별 최대 마찰 1.05 / 1.10."""
-    a = [np.gradient(sg["s"][:, 1], D.DT) + sg["s"][:, 0] * sg["s"][:, 2] for n in D.available() for sg in D.load_run(n)]
-    return float(np.percentile(np.abs(np.concatenate(a)), 99))
+    """데이터 옆 가속도 상위 1% (마찰 보정 목표). [변경 11/21] 계산은 estimate_specs.est_ay_target 으로 옮겼고 specs.json 의 ay_target 을 읽는다.
+    목표는 vx·r 이 아니라 실제 옆 가속도 dvy/dt + vx·r (근거: specs.json basis, 계획서 [결정 11/21] 4)."""
+    return golf_specs.value("ay_target")
 
 
 def hold_speed(w, v):
@@ -64,7 +60,7 @@ if __name__ == "__main__":
     target_ay = ay_p99()
     k_escort = sim.roll_stiffness(sim.golf_params(1.0, None))  # Golf 윤거에서의 Escort 롤 강성
     g0, _ = sim.roll_gradient(1.0, None)
-    print(f"목표 최대 횡가속도 {target_ay:.2f} m/s² (데이터 상위 1%), 목표 롤 기울기 {ROLL_TARGET} 도/(m/s²)")
+    print(f"목표 최대 횡가속도 {target_ay:.2f} m/s² (실제 옆 가속도 상위 1%, specs), 목표 롤 기울기 {ROLL_TARGET} 도/(m/s²)")
     print(f"보정 전 (Escort 서스펜션, Golf 윤거): 롤 강성 {k_escort:.0f} N m/rad, 롤 기울기 {g0:.3f}")
     mu, k = 1.0, k_escort
     for it in range(3):

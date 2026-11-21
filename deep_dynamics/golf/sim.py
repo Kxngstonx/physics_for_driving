@@ -14,8 +14,13 @@
     횡경사는 넣지 않음 (평평한 길)
 
 입력 변환 (패키지 식: 입력 가속도 a → 엔진 토크 m·R_w·a·T_se 또는 브레이크 토크 m·R_w·a·T_sb):
-  앞바퀴 힘 Fxf ≥ 0 → a = Fxf / m        (T_se = 1, 앞바퀴굴림)
-  앞바퀴 힘 Fxf < 0 → a = Fxf / (T_sb·m)  (T_sb = 0.75, 주행 중 앞 제동 몫. 나머지는 뒷바퀴 브레이크)
+  앞바퀴 힘 Fxf ≥ 0 → a = Fxf·k_w / m, k_w = 1 + 4·I_w/(R²·m)  (T_se = 1, 앞바퀴굴림)
+       [변경 11/21, 사용자 결정 (가)] 데이터 효율은 바퀴·구동계 회전 관성을 흡수한 '실효' 값인데 이 모델은 바퀴 관성을 따로 계산한다.
+       구동 입력을 k_w 만큼 키워, 구동 시 가속 = Fxf / m (데이터 효율을 추정한 식과 같음)이 되게 한다. 제동은 그대로.
+  앞바퀴 힘 Fxf < 0 → a = Fxf / (T_sb·m)  (T_sb = 주행 중 앞 제동 몫, specs. 나머지는 뒷바퀴 브레이크)
+[변경 11/21] 차량 값(바퀴 반지름, 윤거, 롤 앞 몫, ABS, 제동 하한, 코너링 강성, 구동력 상한표, 지연, 조향 속도 한계)은
+  deep_dynamics/golf/specs.json 에서 읽는다 (estimate_specs.py 총괄). 무게중심 높이: 공개 0.56 m ≈ Escort 전체 무게중심 0.558 m 라
+  Escort 값(스프링 위 질량 높이 h_s 0.594)을 그대로 둔다.
 Escort 의 가속·최고 속도·조향 속도 제한은 Golf 보다 약해서 푼다. 엔진 한계는 속도별 구동력 표(force_cap)로 준다.
 """
 import collections
@@ -29,23 +34,21 @@ import numpy as np
 from vehiclemodels.init_mb import init_mb
 from vehiclemodels.parameters_vehicle1 import parameters_vehicle1
 
+from . import golf_specs
 from .configs import GOLF_THUNDERHILL as CFG
 from .mb_golf import vehicle_dynamics_mb
 
 G = 9.81
 DT = CFG.dt
-WHEEL_R = 0.319  # data.WHEEL_R 와 같은 값 (data 모듈은 pandas 를 끌어와서 여기서는 숫자만)
+_v = golf_specs.value
+WHEEL_R = _v("wheel_radius")
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-FORCE_TABLE = os.path.join(REPO, "experiments/golf/results/drive_force_limit.csv")
-SPECS = os.path.join(REPO, "experiments/golf/results/specs.json")
 CALIB = os.path.join(REPO, "experiments/golf/results/sim/calibration.json")  # experiments/golf/calibrate_sim.py 출력
-DELAYS = os.path.join(REPO, "experiments/golf/results/sim/delays.json")  # experiments/golf/fit_delays.py 출력
-# [가정 11/19] 윤거: Golf Mk7 공개 제원 범위(앞 1,533~1,549, 뒤 1,504~1,522 mm)의 가운데. 데이터 차량의 세대·트림은 모름.
-# Escort 값(앞 1.39, 뒤 1.42 m)은 15 cm 좁아 같은 횡가속도에서 전복에 더 가깝다
-TRACK_F, TRACK_R = 1.541, 1.513
-ROLL_FRONT_SHARE = 0.61  # 롤 강성 앞 몫: Escort 원래 값(스프링+안티롤바)과 같게 유지
-ABS_SLIP = (0.12, 0.18)  # 이 미끄럼률 사이에서 브레이크 토크를 1 → 0 (타이어 최대 마찰은 미끄럼 약 0.15)
-F_BRAKE_MIN = -6000.0  # 제동 하한 (N), 계획서 9-2
+TRACK_F, TRACK_R = _v("track_f"), _v("track_r")  # 윤거 (공개, Subosits 2020). Escort(1.39/1.42 m)는 15 cm 좁아 전복에 가까웠다
+ROLL_FRONT_SHARE = _v("roll_front_share")  # 롤 강성 앞 몫 (가정: Escort 원래 값 유지)
+ABS_SLIP = tuple(_v("abs_slip"))  # 이 미끄럼률 사이에서 브레이크 토크를 1 → 0 (가정)
+F_BRAKE_MIN = _v("brake_force_min")  # 제동 하한 (N, 데이터 20개 파일). 이전 −6000 (2개 파일)
+STEER_RATE_MAX = _v("steer_rate_max")  # 조향 속도 한계 (rad/s, 자동 조향 99.9%). 이전 ±10 (사실상 없음)
 POWER_BINS = (28.0, 32.0)  # 이 속도 구간의 출력(힘×속도) 평균으로 32 m/s 이상을 이어 씀 (32~34 구간은 표본 적음)
 _PHYS = {n: v for n, v, *_ in CFG.phys}
 CR0, CR2 = _PHYS["Cr0"], _PHYS["Cr2"]
@@ -60,10 +63,8 @@ def load_calibration(path=CALIB):
     return json.load(open(path)) if os.path.exists(path) else {}
 
 
-def load_delays(path=DELAYS):
-    if not os.path.exists(path):
-        return None
-    d = json.load(open(path))
+def load_delays():
+    d = _v("actuator_delays")
     return dict(brake=tuple(d["brake"]["use"]), engine=tuple(d["engine"]["use"]))
 
 
@@ -79,10 +80,9 @@ def set_roll_stiffness(p, k_roll):
     return p
 
 
-@functools.lru_cache(maxsize=None)
 def _tire_stiffness():
-    spec = json.load(open(SPECS))["GOLF"]["final"]
-    return spec["Cf_lin"], spec["Cr_lin"]
+    """앞·뒤 축 코너링 강성 (N/rad): Fiala 맞춤 (specs, 11/21). 이전: 직선 회귀 85.7 / 75.0 kN/rad."""
+    return _v("tire_stiffness_f"), _v("tire_stiffness_r")
 
 
 def golf_params(mu_scale=1.0, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0):
@@ -105,7 +105,7 @@ def golf_params(mu_scale=1.0, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0):
     p.longitudinal.v_switch = 1e3
     p.longitudinal.v_max = 1e3
     p.longitudinal.v_min = -1e3
-    p.steering.v_max, p.steering.v_min = 10.0, -10.0
+    p.steering.v_max, p.steering.v_min = STEER_RATE_MAX, -STEER_RATE_MAX  # [변경 11/21] 데이터 범위 (이전 ±10)
     # 축별 타이어 (mb_golf 는 tire_f/tire_r 만 씀): 횡강성 (축 강성 = p_ky1 × 축 정적 하중) 을 데이터 추정 코너링 강성에 맞춤
     cf, cr = _tire_stiffness()
     p.tire_f, p.tire_r = copy.deepcopy(p.tire), copy.deepcopy(p.tire)
@@ -118,10 +118,10 @@ def golf_params(mu_scale=1.0, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0):
     return p
 
 
-def force_cap_table(path=FORCE_TABLE):
-    """속도별 구동력 상한 (상위 1%, 효율 포함) → (속도 격자, 힘). 구간 가운데 속도에 값을 두고,
+def force_cap_table():
+    """속도별 구동력 상한 (상위 1%, 효율 포함, specs 의 drive_force_cap) → (속도 격자, 힘). 구간 가운데 속도에 값을 두고,
     POWER_BINS 이상은 그 구간들의 평균 출력 P 로 F = P / v."""
-    t = np.genfromtxt(path, delimiter=",", names=True)
+    t = {k: np.asarray(v, dtype=float) for k, v in _v("drive_force_cap").items()}
     vc = 0.5 * (t["v_lo"] + t["v_hi"])
     keep = t["v_hi"] <= POWER_BINS[1]
     pw = (t["F_p99_N"] * vc)[(t["v_lo"] >= POWER_BINS[0]) & keep].mean()
@@ -140,7 +140,9 @@ def force_cap(v):
 
 def accel_input(Fxf, p):
     """앞바퀴 힘 (N) → CommonRoad 종방향 입력 (가속도)."""
-    return Fxf / p.m if Fxf >= 0 else Fxf / (p.T_sb * p.m)
+    if Fxf >= 0:
+        return Fxf * (1.0 + 4.0 * p.I_y_w / (p.R_w ** 2 * p.m)) / p.m  # 바퀴 관성 보정 (모듈 설명, 11/21 (가))
+    return Fxf / (p.T_sb * p.m)
 
 
 def rhs(x, u, p, g_slope=0.0):

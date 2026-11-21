@@ -1,11 +1,10 @@
 """시뮬레이터(sim.py)·MPPI 힘 입력(mppi.py) 점검 (docs/experiment_plan_golf.md 4-4, 8-2, 9-2절)."""
-import json
 import math
 
 import numpy as np
 import torch
 
-from deep_dynamics.golf import mppi, sim
+from deep_dynamics.golf import data as D, golf_specs, mppi, sim
 from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG
 
 TRACK = "experiments/golf/results/tracks/thunderhill_recorded.npz"
@@ -26,11 +25,13 @@ _res = sim.road_load
 
 def test_params_are_golf_values():
     p = sim.golf_params()
-    spec = json.load(open(sim.SPECS))["GOLF"]["final"]
+    v = golf_specs.value
     assert (p.m, p.a, p.b, p.R_w, p.T_se, p.T_sb) == (CFG.m, CFG.lf, CFG.lr, sim.WHEEL_R, 1.0, CFG.brake_front_share)
+    assert (p.m, p.a, p.b, p.R_w, p.T_sb) == (v("mass"), v("cg_a"), v("cg_b"), v("wheel_radius"), v("brake_front_share"))
     assert abs(p.m_s + p.m_uf + p.m_ur - p.m) < 1e-9
     Fz_f = p.m * sim.G * p.b / (p.a + p.b)
-    assert abs(-p.tire_f.p_ky1 * Fz_f - spec["Cf_lin"]) < 1e-6 * spec["Cf_lin"]
+    assert abs(-p.tire_f.p_ky1 * Fz_f - v("tire_stiffness_f")) < 1e-6 * v("tire_stiffness_f")
+    assert (p.steering.v_max, p.steering.v_min) == (v("steer_rate_max"), -v("steer_rate_max"))  # [11/21] 데이터 범위
     assert p.longitudinal.a_max * p.longitudinal.v_switch / 30.0 > 100  # Escort 가속 제한(30 m/s 에서 1.8 m/s²)이 풀림
     p, p2 = sim.golf_params(1.0), sim.golf_params(0.9)
     assert abs(p2.tire_f.p_dy1 - 0.9 * p.tire_f.p_dy1) < 1e-12 and abs(p2.tire_r.p_dx1 - 0.9 * p.tire_r.p_dx1) < 1e-12
@@ -47,11 +48,12 @@ def test_calibrated_track_and_roll():
 
 
 def test_drive_force_gives_expected_acceleration_and_is_not_clipped():
-    """Fxf → 가속도 변환 + Escort 가속 제한 해제: 30 m/s 에서 4.3 kN (약 2.6 m/s²) 이 잘리지 않음."""
+    """Fxf → 가속도 변환 + Escort 가속 제한 해제: 30 m/s 에서 4.3 kN (약 2.4 m/s²) 이 잘리지 않음.
+    [11/21 (가)] 구동은 바퀴 관성 보정으로 가속 = Fxf/m − 저항/M_EQ (데이터 효율을 추정한 식과 같은 Fxf/m)."""
     for v0, F in ((20.0, 2000.0), (30.0, 4300.0)):
         _, s = _run(v0, F)
         a = s[0] - v0
-        exp = (F - _res(v0 + 0.5 * a)) / M_EQ
+        exp = F / CFG.m - _res(v0 + 0.5 * a) / M_EQ
         assert abs(a - exp) < 0.03 * abs(exp), (v0, a, exp)
 
 
@@ -86,7 +88,7 @@ def test_abs_keeps_wheels_rolling_when_braking_in_a_turn():
 
 def test_force_cap_table():
     vg, fg = sim.force_cap_table()
-    t = np.genfromtxt(sim.FORCE_TABLE, delimiter=",", names=True)
+    t = {k: np.asarray(x) for k, x in golf_specs.value("drive_force_cap").items()}
     assert abs(sim.force_cap(9.0) - t["F_p99_N"][t["v_lo"] == 8][0]) < 1.0  # 8~10 m/s 구간 상위 1% (구간 가운데)
     hi = sim.force_cap(np.array([34.0, 40.0, 50.0]))
     assert (np.diff(hi) < 0).all()  # 32 m/s 이상은 일정 출력 → 속도에 반비례
@@ -205,3 +207,25 @@ def test_tuning_select_groups_by_horizon(tmp_path=None):
     T.select()
     ch = T.load()["chosen"]
     assert ch["B_25"] == dict(lam=0.3, noise=0.5) and ch["B_50"] == dict(lam=1.0, noise=2.0)
+
+
+def test_specs_items_have_source_and_basis():
+    """[11/21] specs.json 의 모든 항목에 출처(published/data/assumed)와 근거가 있다. 데이터 값은 20개 파일."""
+    items = golf_specs.load()["items"]
+    for k, it in items.items():
+        assert it["source"] in ("published", "data", "assumed") and len(it["basis"]) > 10, k
+        if it["source"] == "data":
+            assert it.get("files") == len(D.available()) == 20, k
+
+
+def test_model_data_sim_read_the_same_specs():
+    """[11/21] 모델(configs)·데이터(data)·시뮬레이터(sim)가 같은 specs 값을 쓴다 (손으로 옮겨 적은 곳 없음)."""
+    v = golf_specs.value
+    assert (CFG.m, CFG.lf, CFG.lr, CFG.brake_front_share) == (v("mass"), v("cg_a"), v("cg_b"), v("brake_front_share"))
+    P = dict((n, x) for n, x, *_ in CFG.phys)
+    assert (P["Iz"], P["Cr0"], P["Cr2"]) == (v("yaw_inertia"), v("resist_cr0"), v("resist_cr2"))
+    assert (sim.WHEEL_R, sim.F_BRAKE_MIN, (sim.TRACK_F, sim.TRACK_R)) == (v("wheel_radius"), v("brake_force_min"), (v("track_f"), v("track_r")))
+    assert sim.load_delays() == dict(brake=tuple(v("actuator_delays")["brake"]["use"]), engine=tuple(v("actuator_delays")["engine"]["use"]))
+    df = D.read_raw("2023-11_9")
+    assert np.allclose(df["Fxf"], v("drive_eff") * df["F_drive"] - df["F_brake_f"])
+    assert np.allclose(df["F_drive"], D.drive_force(df, v("gear_ratios"), v("wheel_radius"))[0])

@@ -159,7 +159,7 @@ def recorded_track(info=None):
 # ---------------------------------------------------------------- 모델 없는 운전자 (11/19 사용자 결정)
 # 시뮬레이터 검증이 학습 모델(R1–R6)에 기대지 않도록, 고전 제어기로 기록 주행선·기록 속도를 따라간다.
 #   조향: pure pursuit (앞쪽 경로 한 점을 겨눔) + 언더스티어 보정 + 횡오차 PI.
-#         언더스티어 계수 K_us = m/L·(lr/Cf − lf/Cr) 는 제원 추정의 축별 코너링 강성(specs.json)에서 — 학습 모델이 아님
+#         언더스티어 계수 K_us = m/L·(lr/Cf − lf/Cr) 는 축별 코너링 강성(deep_dynamics/golf/specs.json, 11/21 Fiala)에서 — 학습 모델이 아님
 #   속도: 앞쪽(0.3초 뒤 도달할 지점)의 기록 속도를 목표로 PI + 목표 속도 변화·저항·경사를 미리 보상
 # 운전 실력이 실제 Stanford 제어기와 다르므로 랩타임 외에 속도·횡오차 추종도 함께 기록한다 (계획서 8-3절의 한계)
 FREE = dict(look_t=0.8, look_min=6.0, look_max=30.0, k_ey=0.02, ki_ey=0.01, kp_v=1.0, ki_v=0.1, prev_t=0.3,
@@ -173,9 +173,10 @@ def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
     P = np.c_[tr.np["x"], tr.np["y"]]
     psi_t, vref, n = tr.np["psi"], tr.vref.detach().cpu().numpy().astype(float), len(P)
     wl, wr = tr.np["width_l"], tr.np["width_r"]
-    p, spec = world.p, json.load(open(sim.SPECS))["GOLF"]["final"]
+    from deep_dynamics.golf.golf_specs import value
+    p = world.p
     L = p.a + p.b
-    K_us = p.m / L * (p.b / spec["Cf_lin"] - p.a / spec["Cr_lin"])
+    K_us = p.m / L * (p.b / value("tire_stiffness_f") - p.a / value("tire_stiffness_r"))
     g = gains
     world.reset(P[i0, 0], P[i0, 1], float(psi_t[i0]), max(float(vref[i0]), 0.5), F0=0.0)
     i, prog, last, delta, ie_y, ie_v = i0, 0, i0, 0.0, 0.0, 0.0

@@ -7,7 +7,7 @@ BSD 라이선스 — 같은 폴더의 LICENSE_commonroad_vehicle_models.txt). �
   - 타이어 계수: 앞바퀴(LF, RF)는 p.tire_f, 뒷바퀴(LR, RR)는 p.tire_r (원본은 넷 다 같은 p.tire).
     이유: 원본 타이어는 횡강성이 하중에 정비례(K_y = p_ky1·F_z)라 앞뒤 축 강성 비가 하중 비와 같아져 언더스티어가 거의 0.
     실제 Golf 는 20~35 m/s 에서 조향 대비 회전 반응이 운동학 값의 0.44~0.48 배 (강한 언더스티어) [확인 11/18].
-    축별 횡강성을 데이터 추정값(experiments/golf/results/specs.json 의 Cf_lin, Cr_lin)에 맞추려고 나눔
+    축별 횡강성을 데이터 추정값(deep_dynamics/golf/specs.json 의 tire_stiffness_f/r, 11/21)에 맞추려고 나눔
   - [11/19] ABS: 바퀴별 미끄럼률(이 식 안의 s_lf..s_rr)이 p.abs_slip = (시작, 끝) 사이면 그 바퀴의 브레이크 토크를 1 → 0 으로 줄임.
     p.abs_slip 이 None 이면 원본과 같음. 이유: 원본은 브레이크 토크를 좌우 같게 나누고 잠김을 막지 않아, 코너 제동에서 하중이
     빠진 안쪽 뒷바퀴가 잠기고 차가 돈다(적분 간격과 무관). Golf 에는 ABS 가 있다(데이터 제동 시간의 1%에서 작동) [확인 11/18]

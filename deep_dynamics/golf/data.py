@@ -8,7 +8,7 @@ docs/experiment_plan_golf.md 5-6절, 6-2절을 그대로 구현한다.
        출발 중(1단, 클러치 미끄러짐)은 엔진 토크 × 1단 감속비 (drive_force 주석)
        [변경 11/19] 클러치 신호(clutchEngage_int)는 쓰지 않는다 (drive_force 주석)
        Fxf = 구동계 효율 × 구동력 − (앞왼쪽 + 앞오른쪽 제동력)   (제동력 열은 양수로 기록돼 있음 [확인])
-       구동계 효율 0.699 는 experiments/golf/estimate_specs.py 의 추정값. force 모드 물리 식(R1, R4)에는
+       구동계 효율·바퀴 반지름·감속비는 deep_dynamics/golf/specs.json (estimate_specs.py 총괄, 11/21). force 모드 물리 식(R1, R4)에는
        구동 이득 계수가 없어 효율을 학습으로 흡수할 수 없으므로 입력 계산에 넣는다
   3. [vx, vy, r, Fxf, 조향각, 뱅크] 에 10 Hz 4차 버터워스 양방향 필터 → 8개마다 1개 (dt 0.04 s)
   4. 5 m/s 기준으로 버리지 않음 (그 기준은 AV-21 것). 단, 정지 구간(vx < V_STOP)은 잘라 낸다:
@@ -32,10 +32,9 @@ FS = 200.0          # 원본 샘플링 (Hz)
 EVERY = 8           # 200 Hz → 25 Hz
 DT = EVERY / FS     # 0.04 s
 CUTOFF = 10.0       # 저역 통과 차단 주파수 (Hz)
-WHEEL_R = 0.319     # 바퀴 반지름 (m), 뒷바퀴 차속 ÷ 회전 속도 [확인: 문서 5-5]
-GEARS = np.array([8.8, 5.65, 3.93, 3.0])  # 실측 전체 감속비 최빈값 [확인: 문서 5-5]
 GEAR_TOL = 0.10     # 어느 기어와도 10% 넘게 다르면 변속 중으로 보고 구동력 0
-DRIVE_EFF = 0.699   # 구동계 효율 (엔진 토크 신호 → 실제 바퀴 힘). experiments/golf/results/specs.json
+# [변경 11/21] 바퀴 반지름(wheel_radius)·감속비(gear_ratios)·구동계 효율(drive_eff)은 손으로 적지 않고 specs.json 에서 읽는다
+#   (golf_specs.value). 이전 상수: 0.319 m, [8.8, 5.65, 3.93, 3.0] (2개 파일 탐색값), 0.699
 V_STOP = 0.5        # 정지 판정 (m/s, 필터 후 25 Hz 값 기준)
 V_LAUNCH = 6.0      # 출발 구간 제외 ablation 의 기준 속도 (계획서 10절)
 MIN_LEN = 40        # 구간 최소 길이 (25 Hz 샘플 수)
@@ -47,8 +46,12 @@ def available(data_dir=DATA_DIR):
     return [n for n in names if n not in DUPLICATES]
 
 
-def drive_force(df):
-    """엔진 토크 → 앞바퀴 구동력 (N). 반환 (구동력, 기어 감속비 또는 nan)."""
+def drive_force(df, gears=None, wheel_r=None):
+    """엔진 토크 → 앞바퀴 구동력 (N). 반환 (구동력, 기어 감속비 또는 nan).
+    gears·wheel_r 를 주지 않으면 specs.json 값 (estimate_specs 는 새로 추정한 값을 직접 넘긴다)."""
+    from .golf_specs import value
+    GEARS = np.asarray(value("gear_ratios") if gears is None else gears, dtype=float)
+    WHEEL_R = value("wheel_radius") if wheel_r is None else wheel_r
     wf = 0.5 * (df["wheelspeed_fl"].to_numpy() + df["wheelspeed_fr"].to_numpy())
     eng = df["engine_rpm"].to_numpy() * 2.0 * np.pi / 60.0
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -69,15 +72,22 @@ def drive_force(df):
     return F, gear
 
 
-def read_raw(name, data_dir=DATA_DIR):
-    """CSV 하나 → 200 Hz DataFrame + 계산 열 (F_drive, F_brake_f, F_brake_r, Fxf, gear)."""
-    df = pd.read_csv(os.path.join(data_dir, name + ".csv"), comment="#")
-    F, gear = drive_force(df)
+def read_csv(name, data_dir=DATA_DIR):
+    """CSV 하나 → 200 Hz DataFrame, 기록된 열만 (specs.json 이 필요 없음: estimate_specs 가 specs 를 처음 만들 때 씀)."""
+    return pd.read_csv(os.path.join(data_dir, name + ".csv"), comment="#")
+
+
+def read_raw(name, data_dir=DATA_DIR, gears=None, wheel_r=None, drive_eff=None):
+    """CSV 하나 → 200 Hz DataFrame + 계산 열 (F_drive, F_brake_f, F_brake_r, Fxf, gear).
+    gears·wheel_r·drive_eff 를 주지 않으면 specs.json 값."""
+    from .golf_specs import value
+    df = read_csv(name, data_dir)
+    F, gear = drive_force(df, gears, wheel_r)
     df["F_drive"] = F
     df["gear"] = gear
     df["F_brake_f"] = df["brake_fl_N"] + df["brake_fr_N"]
     df["F_brake_r"] = df["brake_rl_N"] + df["brake_rr_N"]
-    df["Fxf"] = DRIVE_EFF * df["F_drive"] - df["F_brake_f"]
+    df["Fxf"] = (value("drive_eff") if drive_eff is None else drive_eff) * df["F_drive"] - df["F_brake_f"]
     return df
 
 
