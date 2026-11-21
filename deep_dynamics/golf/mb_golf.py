@@ -3,7 +3,7 @@
 원본: commonroad-vehicle-models 3.0.2, vehiclemodels/vehicle_dynamics_mb.py (TUM Cyber-Physical Systems Group,
 BSD 라이선스 — 같은 폴더의 LICENSE_commonroad_vehicle_models.txt). 원본 패키지는 고치지 않았다.
 
-바꾼 것 (아래 두 가지뿐. 그 밖의 줄은 원본과 같음):
+바꾼 것 (아래 세 가지뿐. 그 밖의 줄은 원본과 같음):
   - 타이어 계수: 앞바퀴(LF, RF)는 p.tire_f, 뒷바퀴(LR, RR)는 p.tire_r (원본은 넷 다 같은 p.tire).
     이유: 원본 타이어는 횡강성이 하중에 정비례(K_y = p_ky1·F_z)라 앞뒤 축 강성 비가 하중 비와 같아져 언더스티어가 거의 0.
     실제 Golf 는 20~35 m/s 에서 조향 대비 회전 반응이 운동학 값의 0.44~0.48 배 (강한 언더스티어) [확인 11/18].
@@ -11,6 +11,12 @@ BSD 라이선스 — 같은 폴더의 LICENSE_commonroad_vehicle_models.txt). �
   - [11/19] ABS: 바퀴별 미끄럼률(이 식 안의 s_lf..s_rr)이 p.abs_slip = (시작, 끝) 사이면 그 바퀴의 브레이크 토크를 1 → 0 으로 줄임.
     p.abs_slip 이 None 이면 원본과 같음. 이유: 원본은 브레이크 토크를 좌우 같게 나누고 잠김을 막지 않아, 코너 제동에서 하중이
     빠진 안쪽 뒷바퀴가 잠기고 차가 돈다(적분 간격과 무관). Golf 에는 ABS 가 있다(데이터 제동 시간의 1%에서 작동) [확인 11/18]
+  - [11/21] 타이어 좌우 거울상 (선택, p.tire_mirror). 원본 tire_model.formula_lateral 은 옆 힘 밀림 항을
+    sign(캠버)·(p_hy1, Fz·p_vy1) 로 둬서, 직진 중 차체가 0.1° 만 기울어도 바퀴마다 하중의 3.7% 옆 힘이 켜졌다 꺼졌다 한다
+    (네 바퀴 부호가 같아지면 차가 옆으로 흐름) [확인 11/21]. p.tire_mirror=True 이면 표준 PAC2002 식(부호 함수 없음,
+    _lateral_std)을 쓰고, 측정 쪽(왼쪽)과 반대인 오른쪽 바퀴는 타이어를 거울상으로 쓴다: Fy_R(κ, α, γ) = −Fy_L(κ, −α, −γ)
+    (MBSim magic_formula_62 와 같은 규칙. Project Chrono ChPac02Tire·shift-dynamics pac2002 는 같은 효과를 계수 부호로 냄).
+    False 면 원본과 같음. 앞뒤 방향 힘은 그대로 (거울상 대상 아님)
 """
 import math
 
@@ -25,6 +31,20 @@ __version__ = "2020a"
 __maintainer__ = "Gerald Würsching"
 __email__ = "commonroad@lists.lrz.de"
 __status__ = "Released"
+
+
+def _lateral_std(alpha, gamma, F_z, p):
+    """표준 PAC2002 순수 옆 힘 (왼쪽 타이어 기준). tire_model.formula_lateral 과 같되 밀림 항에 sign(γ) 가 없다
+    (S_hy = p_hy1 + p_hy3·γ, S_vy = Fz·(p_vy1 + p_vy3·γ); 원본의 sign(γ)·|γ| 항은 γ 와 같으므로 캠버 비례 항은 같음)."""
+    S_hy = p.p_hy1 + p.p_hy3 * gamma
+    S_vy = F_z * (p.p_vy1 + p.p_vy3 * gamma)
+    alpha_y = alpha + S_hy
+    mu_y = p.p_dy1 * (1 - p.p_dy3 * gamma ** 2)
+    C_y = p.p_cy1
+    D_y = mu_y * F_z
+    E_y = p.p_ey1
+    B_y = F_z * p.p_ky1 / (C_y * D_y)
+    return D_y * math.sin(C_y * math.atan(B_y * alpha_y - E_y * (B_y * alpha_y - math.atan(B_y * alpha_y)))) + S_vy, mu_y
 
 
 def vehicle_dynamics_mb(x, uInit, p):
@@ -183,18 +203,24 @@ def vehicle_dynamics_mb(x, uInit, p):
     F0_x_RR = tireModel.formula_longitudinal(s_rr, gamma_RR, F_z_RR, p.tire_r)
 
     #compute lateral tire forces using the magic formula for pure slip
-    res = tireModel.formula_lateral(alpha_LF, gamma_LF, F_z_LF, p.tire_f)
-    F0_y_LF = res[0]
-    mu_y_LF = res[1]
-    res = tireModel.formula_lateral(alpha_RF, gamma_RF, F_z_RF, p.tire_f)
-    F0_y_RF = res[0]
-    mu_y_RF = res[1]
-    res = tireModel.formula_lateral(alpha_LR, gamma_LR, F_z_LR, p.tire_r)
-    F0_y_LR = res[0]
-    mu_y_LR = res[1]
-    res = tireModel.formula_lateral(alpha_RR, gamma_RR, F_z_RR, p.tire_r)
-    F0_y_RR = res[0]
-    mu_y_RR = res[1]
+    if getattr(p, "tire_mirror", False):  # [11/21] 표준 식 + 오른쪽 거울상 (모듈 설명)
+        F0_y_LF, mu_y_LF = _lateral_std(alpha_LF, gamma_LF, F_z_LF, p.tire_f)
+        F0_y_RF, mu_y_RF = _lateral_std(-alpha_RF, -gamma_RF, F_z_RF, p.tire_f)  # 거울상 입력으로 계산한 값 (부호는 결합 뒤에 뒤집음)
+        F0_y_LR, mu_y_LR = _lateral_std(alpha_LR, gamma_LR, F_z_LR, p.tire_r)
+        F0_y_RR, mu_y_RR = _lateral_std(-alpha_RR, -gamma_RR, F_z_RR, p.tire_r)
+    else:
+        res = tireModel.formula_lateral(alpha_LF, gamma_LF, F_z_LF, p.tire_f)
+        F0_y_LF = res[0]
+        mu_y_LF = res[1]
+        res = tireModel.formula_lateral(alpha_RF, gamma_RF, F_z_RF, p.tire_f)
+        F0_y_RF = res[0]
+        mu_y_RF = res[1]
+        res = tireModel.formula_lateral(alpha_LR, gamma_LR, F_z_LR, p.tire_r)
+        F0_y_LR = res[0]
+        mu_y_LR = res[1]
+        res = tireModel.formula_lateral(alpha_RR, gamma_RR, F_z_RR, p.tire_r)
+        F0_y_RR = res[0]
+        mu_y_RR = res[1]
 
     #compute longitudinal tire forces using the magic formula for combined slip
     F_x_LF = tireModel.formula_longitudinal_comb(s_lf, alpha_LF, F0_x_LF, p.tire_f)
@@ -204,9 +230,13 @@ def vehicle_dynamics_mb(x, uInit, p):
 
     #compute lateral tire forces using the magic formula for combined slip
     F_y_LF = tireModel.formula_lateral_comb(s_lf, alpha_LF, gamma_LF, mu_y_LF, F_z_LF, F0_y_LF, p.tire_f)
-    F_y_RF = tireModel.formula_lateral_comb(s_rf, alpha_RF, gamma_RF, mu_y_RF, F_z_RF, F0_y_RF, p.tire_f)
     F_y_LR = tireModel.formula_lateral_comb(s_lr, alpha_LR, gamma_LR, mu_y_LR, F_z_LR, F0_y_LR, p.tire_r)
-    F_y_RR = tireModel.formula_lateral_comb(s_rr, alpha_RR, gamma_RR, mu_y_RR, F_z_RR, F0_y_RR, p.tire_r)
+    if getattr(p, "tire_mirror", False):  # 오른쪽: 거울상 입력으로 결합 미끄럼 계산 후 부호를 뒤집음
+        F_y_RF = -tireModel.formula_lateral_comb(s_rf, -alpha_RF, -gamma_RF, mu_y_RF, F_z_RF, F0_y_RF, p.tire_f)
+        F_y_RR = -tireModel.formula_lateral_comb(s_rr, -alpha_RR, -gamma_RR, mu_y_RR, F_z_RR, F0_y_RR, p.tire_r)
+    else:
+        F_y_RF = tireModel.formula_lateral_comb(s_rf, alpha_RF, gamma_RF, mu_y_RF, F_z_RF, F0_y_RF, p.tire_f)
+        F_y_RR = tireModel.formula_lateral_comb(s_rr, alpha_RR, gamma_RR, mu_y_RR, F_z_RR, F0_y_RR, p.tire_r)
 
     #auxiliary movements for compliant joint equations
     delta_z_f = p.h_s - p.R_w + x[16] - x[11] 

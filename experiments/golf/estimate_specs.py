@@ -493,7 +493,9 @@ def build_specs():
         "모델이 학습한 조작 범위 안에서 비교하기 위함 (사용자 결정 11/21, 계획서 [결정 11/21] 3). 최대값은 센서 튐으로 봄", files=nf, **si)
     ayt, ai = est_ay_target(names)
     put("ay_target", ayt, "data", "마찰 보정 목표 (m/s²): 실제 옆 가속도 dvy/dt + vx·r 상위 1%. vx·r 은 옆 미끄럼 속도 변화를 빼먹어 크게 나옴 (11.66 → 10.66, 11/21 사용자 승인). "
-        "교차 확인: 관성 센서 ayCG 상위 1%, Fiala 축별 마찰", files=nf, **ai)
+        "필터는 모델 학습 데이터와 같은 10 Hz (사용자 결정 11/21: 학습과 다르게 할 근거 없음; 2 Hz 면 10.48). "
+        "교차 확인: 관성 센서 ayCG 와 상관 0.994·평균 차 0 (10 Hz 상위 1% 는 센서 진동으로 11.03, 2 Hz 에서 10.57 vs 10.48 로 일치), "
+        "Fiala 축별 마찰 1.06/1.12", files=nf, **ai)
     fi = est_fiala(names, m, it["cg_a"]["value"], it["cg_b"]["value"], it["yaw_inertia"]["value"], eta, gr, wr)
     fb = "Fiala(브러시) 곡선을 축별 옆 힘·미끄럼각에 맞춤 (연구실 논문과 같은 방법, GTI 데이터에서 Spielberg 127/171 kN/rad 를 4~5% 로 재현). 이전 85.7/75.0 (직선, 회귀 희석으로 작게 나옴)"
     put("tire_stiffness_f", fi["front"]["C"], "data", "앞 축 코너링 강성 (N/rad). " + fb, files=nf, n=fi["n"])

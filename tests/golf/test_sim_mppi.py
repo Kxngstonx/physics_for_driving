@@ -67,10 +67,33 @@ def test_brake_force_is_front_share_of_total():
 
 
 def test_straight_cruise_has_no_lateral_motion():
+    """[변경 11/21 (가)] 우리가 더한 코드(축별 타이어·ABS·변환 단계·구동 보정)가 직진에서 옆 흐름을 만들지 않는가.
+    기본 타이어의 옆 힘 밀림 항(p_hy*, p_vy*, r_vy*)을 이 테스트 안에서만 0 으로 둔다. 이유: CommonRoad 원본 식은 밀림 항을
+    sign(캠버)·하중의 3.7% 로 둬서, 차체가 0.1° 만 기울어도 켜졌다 꺼졌다 한다 → 원본 식(tire_mirror=False)에서는 2초 뒤
+    vy −0.013 m/s 흐름 (이전 계수에서는 우연히 상쇄돼 5e-4). 원인·대안은 mb_golf 모듈 설명, docs/code_map.md 4절 #9."""
     v0 = 20.0
-    _, s = _run(v0, _res(v0), steps=50)
-    # 완전한 0 은 아님: 2초 뒤 vy 5e-4 m/s, r 8e-4 rad/s (빌려온 Escort 서스펜션·타이어 식의 작은 비대칭 [확인]). 선회의 1/300 수준
-    assert abs(s[0] - v0) < 0.05 and abs(s[1]) < 0.01 and abs(s[2]) < 0.005
+    w = sim.World(cap=False)
+    for t in (w.p.tire_f, w.p.tire_r):
+        for k in list(vars(t)):
+            if k.startswith(("p_hy", "p_vy", "r_vy")):
+                setattr(t, k, 0.0)
+    w.reset(0.0, 0.0, 0.0, v0)
+    for _ in range(50):
+        s = w.step(_res(v0), 0.0)
+    assert abs(s[0] - v0) < 0.05 and abs(s[1]) < 1e-3 and abs(s[2]) < 1e-3, s
+
+
+def test_mirrored_tires_cancel_in_straight_line():
+    """[11/21 (나)] 표준 좌우 거울상(tire_mirror=True)이면 밀림 항을 그대로 둬도 좌우가 상쇄돼 직진에서 흐르지 않는다."""
+    v0 = 20.0
+    _, s = _run(v0, _res(v0), steps=50, tire_mirror=True)
+    assert abs(s[0] - v0) < 0.05 and abs(s[1]) < 1e-3 and abs(s[2]) < 1e-3, s
+
+
+def test_mirrored_tires_turn_symmetrically():
+    """[11/21 (나)] 거울상이면 왼쪽·오른쪽 같은 조향의 회전 응답이 대칭 (원본 식은 약 1% 비대칭)."""
+    r = [_run(25.0, _res(25.0), delta=d, steps=100, tire_mirror=True)[1][2] for d in (0.03, -0.03)]
+    assert abs(r[0] + r[1]) < 1e-3 * abs(r[0]), r
 
 
 def test_understeer_like_golf_data():
