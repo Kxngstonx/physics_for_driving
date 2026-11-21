@@ -5,7 +5,8 @@
 1. 롤 강성 k_roll: 정상 원선회(25 m/s, 횡가속도 약 4~6 m/s²)의 롤 기울기가 ROLL_TARGET 이 되도록 안티롤바를 맞춤
    (스프링은 Escort 그대로, 앞뒤 몫 0.61 유지). 롤 기울기 = 차체 기울기(도) ÷ 횡가속도(m/s²)
 2. 마찰 배율 mu_scale: 시뮬레이터가 정상 선회로 낼 수 있는 최대 횡가속도가 데이터 상위 1% 값이 되도록 맞춤
-   (20 m/s 등속, 조향을 천천히 늘리며 vx·r 의 최댓값을 잼)
+   (20 m/s 등속, 조향을 천천히 늘리며 vx·r 의 최댓값을 잼. 정상 선회라 vx·r = 실제 옆 가속도).
+   [변경 11/21] 데이터 쪽 목표를 vx·r 이 아니라 실제 옆 가속도(dvy/dt + vx·r)로 (ay_p99 설명)
 두 값은 서로 영향을 주므로 번갈아 3번 맞춘다.
 """
 import json
@@ -24,8 +25,13 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "sim",
 
 
 def ay_p99():
-    s = np.concatenate([sg["s"] for n in D.available() for sg in D.load_run(n)])
-    return float(np.percentile(np.abs(s[:, 0] * s[:, 2]), 99))
+    """데이터 옆 가속도 상위 1% (20개 파일).
+    [변경 11/21 사용자 승인] vx·r → 실제 옆 가속도 dvy/dt + vx·r. 근거: vx·r 은 차가 옆으로 미끄러지는 속도의 변화(dvy/dt)를
+    빼먹는다. vx·r 상위 1% 표본은 회전이 빠르게 바뀌는 순간(회전 가속 평균 0.51 rad/s²)이라 실제 옆 가속도는 더 작다
+    (vx·r 상위 1% 1.18 g, 실제 1.08 g, 그 표본들의 실제 평균 1.05 g). 시뮬레이터 쪽은 정상 선회(dvy/dt = 0)에서 재므로
+    두 정의가 같아지는 실제 옆 가속도로 맞춰야 한다. 독립 확인: 같은 차 데이터에 Fiala 곡선을 맞춘 축별 최대 마찰 1.05 / 1.10."""
+    a = [np.gradient(sg["s"][:, 1], D.DT) + sg["s"][:, 0] * sg["s"][:, 2] for n in D.available() for sg in D.load_run(n)]
+    return float(np.percentile(np.abs(np.concatenate(a)), 99))
 
 
 def hold_speed(w, v):
