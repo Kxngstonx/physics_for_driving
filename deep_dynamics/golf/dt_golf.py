@@ -24,7 +24,7 @@ I_DELTA = 8
 
 
 def params():
-    """계수: 차체는 specs (공개값), 하중 이동·타이어 모양은 Subosits 공개값, 타이어 크기는 데이터 (축별 Fiala 강성·마찰을 정적 하중에서 같게).
+    """계수: 차체는 specs (공개값), 하중 이동·타이어 모양은 Subosits 공개값, 타이어 크기는 데이터 (축별 Fiala 강성은 정적 하중에서, 마찰은 그 축이 한계에 닿은 하중 상태에서 같게; 아래 설명).
     c1_f/c1_r, mu0_f/mu0_r 는 축마다 따로 (논문은 네 바퀴 같은 타이어. 우리 데이터는 앞 138 / 뒤 161 kN/rad 로, 논문 하중 의존 모양만으로는
     재현 안 됨 → 크기는 축별 데이터, 모양 c2·μd_fz·n 은 공개값)."""
     v = golf_specs.value
@@ -33,9 +33,17 @@ def params():
                         c2=v("tire_c2"), mu_dfz=v("tire_mu_dfz"), n=v("tire_n"), Fz0=v("tire_Fz0"), c8=v("tire_c8"),
                         T_sb=CFG.brake_front_share, Cr0=v("resist_cr0"), Cr2=v("resist_cr2"), mu_scale=1.0)
     L = p.a + p.b
-    for ax, Fz_s, C, mu in (("f", p.m * G * p.b / L / 2, v("tire_stiffness_f"), v("tire_mu_f")), ("r", p.m * G * p.a / L / 2, v("tire_stiffness_r"), v("tire_mu_r"))):
-        setattr(p, "c1_" + ax, C / (2.0 * p.Fz0 * math.sin(2.0 * math.atan(Fz_s / (p.c2 * p.Fz0)))))  # 2 바퀴 × Cα(정적) = 축 강성
-        setattr(p, "mu0_" + ax, mu - p.mu_dfz * (Fz_s - p.Fz0) / p.Fz0)  # μ(정적 하중) = 축 마찰
+    dW = 0.5 * (p.df + p.dr)
+    for ax, Fz_s, C, mu, share in (("f", p.m * G * p.b / L / 2, v("tire_stiffness_f"), v("tire_mu_f"), p.gamma),
+                                   ("r", p.m * G * p.a / L / 2, v("tire_stiffness_r"), v("tire_mu_r"), 1 - p.gamma)):
+        setattr(p, "c1_" + ax, C / (2.0 * p.Fz0 * math.sin(2.0 * math.atan(Fz_s / (p.c2 * p.Fz0)))))  # 2 바퀴 × Cα(정적) = 축 강성 (작은 옆 가속에서 잰 처음 기울기)
+        # [변경 11/22] 마찰: 데이터 Fiala 축 마찰은 그 축이 한계에 닿은 상태(옆 가속 = μ·g, 하중이 이미 바깥으로 옮겨짐)의 실효값이다.
+        # 그 상태의 두 바퀴 하중 Fz_s ∓ share·ΔFz_lat (ΔFz_lat = h·m·μ·g/d) 에서 Σ μ(Fz_i)·Fz_i = μ_data·(2·Fz_s) 가 되게 μ0 를 정한다.
+        # (이전: 정적 하중에서 μ(Fz_s) = μ_data → 하중 감도가 이동 손실을 한 번 더 빼 앞 축 실효 마찰 약 0.98, 최대 옆 가속 8.26)
+        dla = p.h * p.m * mu * G / dW
+        Fz_i = (Fz_s - share * dla, Fz_s + share * dla)
+        sens = sum((z - p.Fz0) * z for z in Fz_i) * p.mu_dfz / p.Fz0
+        setattr(p, "mu0_" + ax, (mu * 2 * Fz_s - sens) / (2 * Fz_s))
     p.lsd_u = 0.0
     p.lsd_mode = None
     return p
