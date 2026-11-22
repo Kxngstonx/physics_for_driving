@@ -52,7 +52,7 @@ def windows(names, horizon, stride=25):
 def replay(W, lsd=None, recorded_u=False, table=None):
     """→ 예측 (N, K, 5) [vx, vy, r, X, Y], 앞 좌우 바퀴 속도 (N, K, 2)."""
     out, wh = np.full((len(W), len(W[0]["F"]), 5), np.nan), np.full((len(W), len(W[0]["F"]), 2), np.nan)
-    w = sim.calibrated_world(cap=False, delays=None, lsd=lsd, lsd_table=table)
+    w = sim.calibrated_world(cap=False, delays=None, lsd=lsd, lsd_table=table, model="mb")
     for i, win in enumerate(W):
         vx, vy, r = win["s0"]
         w.reset(win["X0"], win["Y0"], win["psi0"], vx, vy, r, delta=win["d0"])
@@ -155,7 +155,7 @@ def run(mode):
     res["corner500"] = dict(ay_data=float(np.abs(S[:, :, 0] * S[:, :, 2]).mean()), ay_sim=float(np.nanmean(np.abs(P[:, :, 0] * P[:, :, 2]))))
     # 폐루프: 모델 없는 운전자 (validate_sim.stage_closed_free 그대로, 시뮬레이터에 LSD 만 더함; (나) 는 표로 u)
     orig = sim.calibrated_world
-    sim.calibrated_world = lambda **kw: orig(lsd=lsd, lsd_table=table, **kw)
+    sim.calibrated_world = lambda **kw: orig(lsd=lsd, lsd_table=table, model="mb", **kw)
     try:
         r = {}
         V.stage_closed_free(r)

@@ -1,4 +1,7 @@
-"""정답 역할의 시뮬레이터: CommonRoad 다물체(4륜) 모델 + 변환 단계 (docs/experiment_plan_golf.md 4-4, 8절).
+"""정답 역할의 시뮬레이터 (docs/experiment_plan_golf.md 4-4, 8절).
+[11/23 사용자 결정] 기본 = model="st": 자전거와 같은 설정 (dt_golf.params_st — 데이터 축 Fiala 를 그대로, 하중 이동을 다시 빼지 않음).
+  다물체("mb", 아래 설명)와 이중 궤도("dt")는 비교용으로 남김. 변환 단계(지연·조향 속도·구동 상한·제동 하한·경사)는 모든 모델 공통.
+아래는 다물체(model="mb") 설명: CommonRoad 다물체(4륜) 모델 + 변환 단계.
 
 기본 차량은 Ford Escort(CommonRoad ID 1, 앞바퀴굴림, 앞 무게 몫 0.63)이고, Golf 에서 알거나 가정한 값은 덮어쓴다
 (golf_params). 서스펜션 스프링·무게중심 높이·바퀴 쪽 질량 등은 Escort 값을 빌린다.
@@ -206,14 +209,17 @@ class World:
     h[0, -1] = [vx, vy, r, Fxf 명령, 조향 명령, bank]. pose = (X, Y, psi). 경사는 set_grade / set_pos 로."""
 
     def __init__(self, mu_scale=1.0, delays=None, h=2e-3, grade_by_idx=None, cap=True, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0,
-                 tire_mirror=True, lsd=None, lsd_table=None, model="mb", tire_shape=None):
+                 tire_mirror=True, lsd=None, lsd_table=None, model="st", tire_shape=None):
         """lsd: [11/22] 앞 LSD (mb_golf 설명). None = 열린 차동장치. dict(mode='passive', T0, G) 또는 dict(mode='active', Tmax).
         lsd_table(F_cmd, vx, r) → 작동 비율 0~1: 'active' 폐루프에서 매 스텝 u 를 정하는 함수 (재생은 set_lsd 로 기록값을 넣음).
         model: [11/22] "mb" = CommonRoad 다물체 (Escort 부품 포함), "dt" = Subosits 이중 궤도 (dt_golf). dt 에는 mu_scale·k_roll·ky·rby·
-        tire_mirror 가 쓰이지 않고 (계수는 specs), LSD 는 'active' 만 (u_diff = 작동 비율, 논문 식 4.28~4.29). lsd 가 None 이면 열림."""
+        tire_mirror 가 쓰이지 않고 (계수는 specs), LSD 는 'active' 만 (u_diff = 작동 비율, 논문 식 4.28~4.29). lsd 가 None 이면 열림.
+        [11/23 사용자 결정, 기본] "st" = 자전거와 같은 설정 (dt_golf.params_st: dt 식에서 하중 이동·하중 감도 끔). 그 밖은 dt 와 같음."""
+        assert model in ("st", "dt", "mb"), model
         self.model = model
-        if model == "dt":
-            self.p = dt_golf.params(**(tire_shape or {}))  # tire_shape: dict(mu_dfz, c2) 맞춤 값 (calibration_dt.json)
+        self.dt_like = model in ("st", "dt")  # 같은 식 (dt_golf.rhs)
+        if self.dt_like:
+            self.p = dt_golf.params_st() if model == "st" else dt_golf.params(**(tire_shape or {}))  # tire_shape: dict(mu_dfz, c2) 맞춤 값 (calibration_dt.json)
             self.p.mu_scale = mu_scale  # 이중 궤도 마찰 배율 (calibration_dt.json, calibrate_sim --model dt)
             if lsd:
                 assert lsd["mode"] == "active", "이중 궤도 모델의 LSD 는 u_diff (active) 만"
@@ -221,7 +227,7 @@ class World:
         else:
             self.p = golf_params(mu_scale, k_roll, ky_f, ky_r, rby_f, tire_mirror)
             self.p.lsd_mode = None
-        if lsd and model != "dt":
+        if lsd and not self.dt_like:
             self.p.lsd_mode, self.p.lsd_eps = lsd["mode"], lsd.get("eps", 1.0)
             self.p.lsd_T0, self.p.lsd_G = lsd.get("T0", 0.0), lsd.get("G", 0.0)
             self.p.lsd_Tmax, self.p.lsd_u = lsd.get("Tmax", 1600.0), 0.0
@@ -234,7 +240,7 @@ class World:
         self.x = None
 
     def reset(self, X, Y, psi, vx, vy=0.0, r=0.0, delta=0.0, F0=0.0):
-        if self.model == "dt":
+        if self.dt_like:
             self.x = dt_golf.init(X, Y, psi, vx, vy, r, delta)
         else:
             v = math.hypot(vx, vy)
@@ -254,20 +260,20 @@ class World:
 
     @property
     def pose(self):
-        return (self.x[0], self.x[1], self.x[2]) if self.model == "dt" else (self.x[0], self.x[1], self.x[4])
+        return (self.x[0], self.x[1], self.x[2]) if self.dt_like else (self.x[0], self.x[1], self.x[4])
 
     @property
     def state(self):
-        return (self.x[3], self.x[4], self.x[5]) if self.model == "dt" else (self.x[3], self.x[10], self.x[5])
+        return (self.x[3], self.x[4], self.x[5]) if self.dt_like else (self.x[3], self.x[10], self.x[5])
 
     def step(self, F_cmd, delta_cmd):
         """한 제어 간격 (0.04 s). 조향은 지연된 목표에 0.04 s 동안 일정한 조향 속도로 도달.
         힘 범위(제동 하한, 속도별 구동력 상한)는 간격 시작의 속도로 한 번 정함."""
         if self.cap:
             F_cmd = min(max(F_cmd, F_BRAKE_MIN), float(force_cap(self.x[3])))
-        i_delta = dt_golf.I_DELTA if self.model == "dt" else 2
+        i_delta = dt_golf.I_DELTA if self.dt_like else 2
         dv = (self.act.steer_target(delta_cmd) - self.x[i_delta]) / DT
-        if self.model == "dt":  # 다물체는 패키지가 조향 속도를 자름 (golf_params steering.v_max); 이중 궤도는 여기서
+        if self.dt_like:  # 다물체는 패키지가 조향 속도를 자름 (golf_params steering.v_max); 이중 궤도는 여기서
             dv = max(-STEER_RATE_MAX, min(STEER_RATE_MAX, dv))
         if self.p.lsd_mode == "active":  # [11/22] 이 간격의 LSD 작동 비율 (기록값 또는 표)
             self.p.lsd_u = self.lsd_override if self.lsd_override is not None else (
@@ -275,7 +281,7 @@ class World:
         x = self.x
         try:
             for _ in range(self.n_sub):
-                if self.model == "dt":  # 앞바퀴 힘을 그대로 (바퀴 회전 상태 없음 → 바퀴 관성 보정 없음)
+                if self.dt_like:  # 앞바퀴 힘을 그대로 (바퀴 회전 상태 없음 → 바퀴 관성 보정 없음)
                     x = rk4(x, [dv, self.act.force_step(F_cmd), self.p.lsd_u], self.p, self.h, self.g_slope, f=dt_golf.rhs)
                 else:
                     x = rk4(x, [dv, accel_input(self.act.force_step(F_cmd), self.p)], self.p, self.h, self.g_slope)
@@ -293,8 +299,15 @@ class World:
 
 def calibrated_world(**kw):
     """보정값(calibration.json: mu_scale, k_roll)과 지연(delays.json)을 넣은 World. kw 로 덮어쓸 수 있음.
-    model='dt' 이면 calibration_dt.json 의 마찰 배율만 쓴다 (다물체 보정값은 쓰지 않음)."""
-    if kw.get("model") == "dt":
+    model='dt' 이면 calibration_dt.json 의 마찰 배율만 쓴다 (다물체 보정값은 쓰지 않음).
+    [11/23] 기본 model='st' (자전거와 같은 설정): 보정 파일 없음 (계수는 specs 데이터 그대로), 지연만."""
+    model = kw.setdefault("model", "st")
+    if model == "st":
+        base = dict(delays=load_delays())
+        if "delays" in kw and kw["delays"] is not None and base["delays"]:
+            kw["delays"] = dict(base["delays"], **kw["delays"])
+        return World(**dict(base, **kw))
+    if model == "dt":
         cal = load_calibration(CALIB_DT)
         base = dict(mu_scale=cal.get("mu_scale", 1.0), delays=load_delays(),
                     tire_shape={k: cal[k] for k in ("mu_dfz", "c2") if k in cal} or None)
@@ -311,7 +324,7 @@ def calibrated_world(**kw):
 
 def roll_gradient(mu_scale=1.0, k_roll=None, v=25.0, delta=0.05, steps=150, tire_mirror=True):
     """정상 원선회의 롤 기울기 (도 / (m/s²)) 와 그때의 횡가속도."""
-    w = World(mu_scale=mu_scale, k_roll=k_roll, cap=False, tire_mirror=tire_mirror)
+    w = World(mu_scale=mu_scale, k_roll=k_roll, cap=False, tire_mirror=tire_mirror, model="mb")
     w.reset(0, 0, 0, v)
     for _ in range(steps):
         s = w.step(road_load(w.state[0]) + w.p.m * 0.5 * (v - w.state[0]), delta)

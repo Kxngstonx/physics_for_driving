@@ -13,7 +13,7 @@ M_EQ = CFG.m + 4 * sim.golf_params().I_y_w / sim.WHEEL_R ** 2
 
 
 def _run(v0, F, delta=0.0, steps=25, **kw):
-    w = sim.World(cap=False, **kw)
+    w = sim.World(cap=False, model="mb", **kw)
     w.reset(0.0, 0.0, 0.0, v0)
     for _ in range(steps):
         s = w.step(F, delta)

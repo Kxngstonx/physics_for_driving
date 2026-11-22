@@ -78,3 +78,36 @@ def test_tire_shape_override_keeps_axle_stiffness_and_friction():
             dla = p.h * p.m * mu * 9.81 / dW
             cap = sum(dt_golf._mu(z, ax, p) * z for z in (Fz_s - share * dla, Fz_s + share * dla))
             assert abs(cap - mu * 2 * Fz_s) < 1e-6 * cap
+
+
+def test_single_track_default_keeps_static_loads_and_data_axle_values():
+    """[11/23] 기본 시뮬레이터 = 자전거와 같은 설정 (st): 선회 중에도 바퀴 하중이 정적 값 → 축 강성·마찰 = 데이터 Fiala (specs)."""
+    from deep_dynamics.golf import golf_specs
+    v = golf_specs.value
+    assert sim.World().model == "st" and sim.calibrated_world().model == "st"
+    w = sim.World(cap=False, model="st")
+    w.reset(0.0, 0.0, 0.0, 25.0)
+    for _ in range(100):
+        s = w.step(sim.road_load(w.state[0]) + w.p.m * 0.5 * (25 - w.state[0]), 0.03)
+    p = w.p
+    L = p.a + p.b
+    fl, fr, rl, rr = dt_golf.loads(w.x, p)
+    assert s[2] > 0 and abs(fl - fr) < 1e-9 and abs(rl - rr) < 1e-9 and abs(fl - p.m * 9.81 * p.b / L / 2) < 1e-6
+    for ax, Fz_s, C, mu in (("f", fl, v("tire_stiffness_f"), v("tire_mu_f")), ("r", rl, v("tire_stiffness_r"), v("tire_mu_r"))):
+        c0 = getattr(p, "c1_" + ax) * p.Fz0 * math.sin(2 * math.atan(Fz_s / (p.c2 * p.Fz0)))
+        assert abs(2 * c0 - C) < 1e-6 * C and abs(dt_golf._mu(Fz_s, ax, p) - mu) < 1e-12
+
+
+def test_single_track_max_lateral_accel_reaches_data_friction():
+    """[11/23] st 는 하중 이동 손실을 두 번 빼지 않아, 속도를 유지하며 조향을 키우면 최대 옆 가속도가 앞 축 데이터 마찰 μ_f·g 근처까지 간다
+    (같은 조건 dt 는 9.26, 11/23 진단)."""
+    from deep_dynamics.golf import golf_specs
+    w = sim.World(cap=False, model="st")
+    w.reset(0, 0, 0, 20.0)
+    best = 0.0
+    for k in range(500):
+        s = w.step(sim.road_load(w.state[0]) + w.p.m * 0.5 * (20.0 - w.state[0]), 0.4 * k / 500)
+        if abs(math.atan2(s[1], s[0])) > 0.15:
+            break
+        best = max(best, s[0] * s[2])
+    assert best > 0.95 * golf_specs.value("tire_mu_f") * 9.81, best

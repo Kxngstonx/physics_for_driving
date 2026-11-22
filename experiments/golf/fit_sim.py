@@ -46,7 +46,7 @@ MODEL = "mb"  # __main__ 에서 정함 (풀 작업자는 fork 로 물려받음)
 def make_world(params, k_roll):
     if MODEL == "dt":  # LSD 는 재생 기록값 (창의 u)
         return sim.World(cap=False, delays=None, model="dt", lsd=dict(mode="active"), tire_shape=params)
-    return sim.World(cap=False, delays=None, k_roll=k_roll, **params)
+    return sim.World(cap=False, delays=None, k_roll=k_roll, model="mb", **params)
 
 
 def windows_for(names, horizon, stride):

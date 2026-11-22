@@ -52,6 +52,19 @@ def params(mu_dfz=None, c2=None):
     return p
 
 
+def params_st():
+    """[11/23 사용자 결정] 자전거(단일 궤도)와 같은 시뮬레이터 = 이 이중 궤도 식에서 하중 이동(앞뒤·옆)과 타이어 하중 감도를 끈 것.
+    이유: 데이터 Fiala 축 곡선(강성 138/161 kN/rad, 마찰 1.06/1.12)은 실제 차에서 잰 '축 전체' 값이라 하중 이동 손실이 이미 들어 있다.
+    하중 이동을 다시 계산하는 4륜 모델(dt, 다물체)에 넣으면 손실이 두 번 빠져, 실제 랩 속도에서 15% 지점에 이탈했다.
+    이 설정은 바퀴 하중이 정적 값에 머물러 축 강성 = 데이터 C, 축 마찰 = 데이터 μ 가 그대로 나온다 (모델 없는 운전자 실제 랩 속도 완주,
+    튜닝 랩 +0.4%, 검증 랩 +1.0%, 11/23). 좌우 바퀴는 남아 있어 LSD·구동력 좌우 배분 식은 그대로 쓸 수 있다."""
+    p = params()
+    p.k_lat = p.k_long = 0.0
+    p.mu_dfz = 0.0
+    p.mu0_f, p.mu0_r = golf_specs.value("tire_mu_f"), golf_specs.value("tire_mu_r")
+    return p
+
+
 def init(X, Y, psi, vx, vy=0.0, r=0.0, delta=0.0):
     return [X, Y, psi, max(vx, 0.5), vy, r, 0.0, 0.0, delta]
 

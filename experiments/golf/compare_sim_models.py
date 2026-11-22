@@ -1,10 +1,11 @@
-"""시뮬레이터 구조 비교 (11/22 사용자 결정 B): 다물체(mb, 지금) vs 이중 궤도(dt, Subosits 2020), 새 검증 기준 ①②③.
+"""시뮬레이터 구조 비교 (11/22 사용자 결정 B): 다물체(mb) vs 이중 궤도(dt, Subosits 2020) vs 자전거와 같은 설정(st, 11/23 기본), 새 검증 기준 ①②③.
 
-  python experiments/golf/compare_sim_models.py run mb|dt_open|dt_lsd
+  python experiments/golf/compare_sim_models.py run mb|dt_open|dt_lsd|st
   python experiments/golf/compare_sim_models.py report   # → results/sim/sim_models_compare.md
 
 방식:
-  mb      : 지금 기본 (CommonRoad 다물체, 거울상, 열린 차동장치, 공식 calibration.json)
+  mb      : CommonRoad 다물체, 거울상, 열린 차동장치, 공식 calibration.json
+  st      : [11/23 기본] dt 식에서 하중 이동·하중 감도 끔 = 자전거 (dt_golf.params_st), 열린 차동장치
   dt_open : 이중 궤도, LSD 열림 (u_diff = 0)
   dt_lsd  : 이중 궤도, LSD (재생 = 데이터 LSDengage_percent/100, 폐루프 = 학습 파일 표; compare_lsd.lsd_table_from_train)
 고정: specs.json, 시험 파일, 운전자 설정 9개, 튜닝·검증 랩. 맞춤(fit_sim) 전 상태.
@@ -31,21 +32,23 @@ from deep_dynamics.golf import specs as S  # noqa: E402
 from deep_dynamics.golf.track import project  # noqa: E402
 
 OUT = V.OUT
-MODES = ("mb", "dt_open", "dt_lsd")
+MODES = ("mb", "dt_open", "dt_lsd", "st")
 L_WB = 2.63
 
 
 def make(mode, table=None, **kw):
     if mode == "mb":
-        return sim.calibrated_world(**kw)
+        return sim.calibrated_world(model="mb", **kw)
     if mode == "dt_open":
         return sim.calibrated_world(model="dt", **kw)
+    if mode == "st":
+        return sim.calibrated_world(model="st", **kw)
     return sim.calibrated_world(model="dt", lsd=dict(mode="active"), lsd_table=table, **kw)
 
 
 def front_ratio(w):
     """빠른 앞바퀴 속도 / 차속. mb: 바퀴 회전 상태, dt: 1 + max κ (κ = Fx/(c8·Fz))."""
-    if w.model == "dt":
+    if w.dt_like:
         Fz, Fx, _ = dt_golf.forces(w.x, w.act.Fe + w.act.Fb, w.p.lsd_u, w.p)
         return 1.0 + max(Fx[0] / (w.p.c8 * max(Fz[0], 1.0)), Fx[1] / (w.p.c8 * max(Fz[1], 1.0)))
     return max(w.x[23], w.x[24]) * sim.WHEEL_R / max(w.state[0], 1.0)
@@ -147,7 +150,7 @@ def run(mode):
     res["step_overshoot"] = sim_step_overshoot(mode, table)
     print(mode, "특성", res["steer_ratio"], round(res["max_ay"], 2), round(res["step_overshoot"], 3), flush=True)
     orig = sim.calibrated_world
-    sim.calibrated_world = lambda **kw: (orig(**kw) if mode == "mb" else orig(model="dt", lsd=dict(mode="active") if mode == "dt_lsd" else None,
+    sim.calibrated_world = lambda **kw: (orig(model="mb", **kw) if mode == "mb" else orig(model="st", **kw) if mode == "st" else orig(model="dt", lsd=dict(mode="active") if mode == "dt_lsd" else None,
                                                                           lsd_table=table, **kw))
     try:
         r = {}
@@ -163,7 +166,7 @@ def report():
     R = {m: json.load(open(os.path.join(OUT, f"sim_model_{m}.json"))) for m in MODES}
     dsr = data_steer_ratio()
     ayt = golf_specs.value("ay_target")
-    L = ["# 시뮬레이터 구조 비교 (11/22): 다물체 vs 이중 궤도 (맞춤 전)", "", "| 기준 | 항목 | 데이터 | 다물체 (지금) | 이중 궤도 LSD 열림 | 이중 궤도 LSD |", "|---|---|---|---|---|---|"]
+    L = ["# 시뮬레이터 구조 비교 (11/23): 다물체 vs 이중 궤도 vs 자전거와 같은 설정", "", "| 기준 | 항목 | 데이터 | 다물체 | 이중 궤도 LSD 열림 | 이중 궤도 LSD | 자전거 (기본) |", "|---|---|---|---|---|---|---|"]
     row = lambda crit, name, dat, fn: L.append(f"| {crit} | {name} | {dat} | " + " | ".join(fn(R[m]) for m in MODES) + " |")
     for key in V.HORIZONS:
         row("①", f"재생 {key} vx / vy / r", "—", lambda r, key=key: " / ".join(f"{r[f'replay_{key}'][k]['rmse_end']:.3f}" for k in ("vx", "vy", "r")))

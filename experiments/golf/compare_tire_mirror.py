@@ -28,7 +28,7 @@ MODES = dict(orig=False, mirror=True)
 
 def replay(W, params):
     out = np.full((len(W), len(W[0]["F"]), 5), np.nan)
-    w = sim.World(cap=False, delays=None, **params)
+    w = sim.World(cap=False, delays=None, model="mb", **params)
     for i, win in enumerate(W):
         vx, vy, r = win["s0"]
         w.reset(win["X0"], win["Y0"], win["psi0"], vx, vy, r, delta=win["d0"])
@@ -46,7 +46,7 @@ def run(mode):
     cal = CS.calibrate(tm)
     params = dict(mu_scale=cal["mu_scale"], k_roll=cal["k_roll"], tire_mirror=tm)
     res = dict(mode=mode, calibration=cal)
-    w = sim.World(cap=False, **params)
+    w = sim.World(cap=False, model="mb", **params)
     w.reset(0, 0, 0, 20.0)
     for _ in range(50):
         s = w.step(sim.road_load(20.0), 0.0)
