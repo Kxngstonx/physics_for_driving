@@ -105,7 +105,7 @@ def stage_mu(res):
 
 def stage_replay(res):
     sp = D.get_split()
-    mu = sim.load_calibration()["mu_scale"]
+    mu = None  # [11/23] 기본 시뮬레이터 st 는 보정 마찰 배율 없음 (이전: 다물체 calibration.json 의 mu_scale 을 그대로 넣음)
     out = {}
     for key, K in HORIZONS.items():
         W = windows(sp["test"], K)
@@ -113,7 +113,7 @@ def stage_replay(res):
         out[key] = metrics(W, replay(W, mu))
         print(key, json.dumps({k: v for k, v in out[key].items()}, ensure_ascii=False)[:400], f"{time.time() - t0:.0f}s", flush=True)
     ev = json.load(open(os.path.join(os.path.dirname(OUT), "eval_roll25.json")))
-    res["replay"] = dict(files=sp["test"], mu=mu, **out, models_1s=ev.get("openloop", {}).get("all"))
+    res["replay"] = dict(files=sp["test"], sim_model=sim.calibrated_world().model, **out, models_1s=ev.get("openloop", {}).get("all"))
 
 
 def lap_info(run=None):
@@ -254,7 +254,7 @@ def stage_closed_free(res):
             print("tune", json.dumps(r, ensure_ascii=False), flush=True)
     fin_t = [r for r in grid if r["finished"]]
     if not fin_t:  # [11/22] 튜닝 랩에서 완주한 설정이 없으면 검증 랩은 돌리지 않고 미달로 기록 (이전에는 여기서 멈춤)
-        res["closed_free"] = dict(mu=sim.load_calibration()["mu_scale"], lap_record=None, gains=None, runs=[], tune_lap=dict(info_t, grid=grid),
+        res["closed_free"] = dict(sim_model=sim.calibrated_world().model, lap_record=None, gains=None, runs=[], tune_lap=dict(info_t, grid=grid),
                                   steer_delay=None, passed=False, note="튜닝 랩에서 완주한 운전자 설정 없음")
         print("튜닝 랩 완주 없음 → 미달", flush=True)
         return
@@ -271,7 +271,7 @@ def stage_closed_free(res):
         print(json.dumps(r, ensure_ascii=False), flush=True)
     fin = [r for r in rows if r["finished"]]
     pick = min(fin, key=lambda r: abs(r["rel_err"])) if fin else None
-    res["closed_free"] = dict(mu=sim.load_calibration()["mu_scale"], lap_record=lap_rec, gains=gains, runs=rows,
+    res["closed_free"] = dict(sim_model=sim.calibrated_world().model, lap_record=lap_rec, gains=gains, runs=rows,
                               tune_lap=dict(info_t, grid=grid),
                               steer_delay=pick["steer_delay"] if pick else None,
                               passed=bool(pick and abs(pick["rel_err"]) <= 0.02))
@@ -287,7 +287,6 @@ def stage_closed(res, key="closed", mppi_kw=None):
     from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG, cfg_of_model
     from deep_dynamics.golf.ladder import load_model
     tr, grade, info = recorded_track()
-    mu = sim.load_calibration()["mu_scale"]
     lap_rec = info["lap_time"]
     mdir = os.path.join(os.path.dirname(OUT), "models")
     mppi_kw = mppi_kw or {}
@@ -305,7 +304,7 @@ def stage_closed(res, key="closed", mppi_kw=None):
                                                                      "ey_max", "v_err_mean", "wall_s")})
             rows.append(row)
             print(json.dumps(row, ensure_ascii=False), flush=True)
-            res[key] = dict(mu=mu, lap_record=lap_rec, track=TRACK, mppi=mppi_kw, runs=rows)
+            res[key] = dict(sim_model=sim.calibrated_world().model, lap_record=lap_rec, track=TRACK, mppi=mppi_kw, runs=rows)
             save_json(res)
             del model
             torch.cuda.empty_cache()
@@ -349,7 +348,7 @@ def stage_report(res):
         L += ["", "![](validation_mu.png)", ""]
     if "replay" in res:
         r = res["replay"]
-        L += [f"## 2. 개루프 재생 (시험 파일 {', '.join(r['files'])}, mu_scale {r['mu']:.2f})", "",
+        L += [f"## 2. 개루프 재생 (시험 파일 {', '.join(r['files'])}, 시뮬레이터 {r.get('sim_model', 'mb')})", "",
               "| 구간 | 시작점 | 발산 | vx 최대 / RMSE (m/s) | 옆미끄럼각 (rad) | r (rad/s) | 위치 (m) |", "|---|---|---|---|---|---|---|"]
         for key in HORIZONS:
             q = r[key]
@@ -362,7 +361,7 @@ def stage_report(res):
         if key not in res or "summary" not in res[key]:
             continue
         c = res[key]
-        L += [f"## {title} (기록 주행선 + 기록 속도, 기록 랩타임 {c['lap_record']:.2f} s, mu_scale {c['mu']:.3f}, MPPI {c.get('mppi', {})})", "",
+        L += [f"## {title} (기록 주행선 + 기록 속도, 기록 랩타임 {c['lap_record']:.2f} s, 시뮬레이터 {c.get('sim_model', 'mb')}, MPPI {c.get('mppi', {})})", "",
               "| 조향 지연 (s) | 완주 | 완주 모델 랩타임 중앙값 (s) | 기록 대비 | 6개 중앙값 기록 대비 |", "|---|---|---|---|---|"]
         for k, s in c["summary"].items():
             L.append(f"| {k} | {s['finished']}/6 | {s.get('median_lap_finished', math.inf):.2f} | {100 * s.get('rel_err_finished', math.inf):+.1f}% | "
@@ -380,7 +379,7 @@ def stage_report(res):
         L += [f"| {q['prev_t']} | {q['kp_v']} | {q['status']} | {q['progress_frac']:.3f} | {q['ey_mean']:.2f} / {q['ey_max']:.2f} |" for q in c["tune_lap"]["grid"]]
     elif "closed_free" in res:
         c = res["closed_free"]
-        L += ["", f"## 5. 폐루프 근사 — 모델 없는 운전자 (기록 랩타임 {c['lap_record']:.2f} s, mu_scale {c['mu']:.3f})", "",
+        L += ["", f"## 5. 폐루프 근사 — 모델 없는 운전자 (기록 랩타임 {c['lap_record']:.2f} s, 시뮬레이터 {c.get('sim_model', 'mb')})", "",
               "학습 모델을 쓰지 않는 고전 제어기(pure pursuit + 언더스티어 보정 + 속도 PI)로 기록 주행선·기록 속도를 따라감.",
               f"운전자 설정은 다른 랩({c['tune_lap']['run']}, 기록 {c['tune_lap']['lap_time']:.2f} s)에서 고름: 속도 미리보기 {c['gains']['prev_t']} s, 속도 비례 이득 {c['gains']['kp_v']}", "",
               "| 미리보기 (s) | 비례 이득 | 결과 | 랩타임 (s) | 그 랩 기록 대비 |", "|---|---|---|---|---|"]
