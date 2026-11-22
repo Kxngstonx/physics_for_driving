@@ -252,7 +252,13 @@ def stage_closed_free(res):
             r = dict(prev_t=pt, kp_v=kp, **r, rel_err=((r["lap_time"] - info_t["lap_time"]) / info_t["lap_time"]) if r["finished"] else None)
             grid.append(r)
             print("tune", json.dumps(r, ensure_ascii=False), flush=True)
-    best = min((r for r in grid if r["finished"]), key=lambda r: abs(r["rel_err"]))
+    fin_t = [r for r in grid if r["finished"]]
+    if not fin_t:  # [11/22] 튜닝 랩에서 완주한 설정이 없으면 검증 랩은 돌리지 않고 미달로 기록 (이전에는 여기서 멈춤)
+        res["closed_free"] = dict(mu=sim.load_calibration()["mu_scale"], lap_record=None, gains=None, runs=[], tune_lap=dict(info_t, grid=grid),
+                                  steer_delay=None, passed=False, note="튜닝 랩에서 완주한 운전자 설정 없음")
+        print("튜닝 랩 완주 없음 → 미달", flush=True)
+        return
+    best = min(fin_t, key=lambda r: abs(r["rel_err"]))
     gains = dict(FREE, prev_t=best["prev_t"], kp_v=best["kp_v"])
     tr, grade, info = recorded_track()
     lap_rec = info["lap_time"]
@@ -367,7 +373,12 @@ def stage_report(res):
         for q in c["runs"]:
             L.append(f"| {q['rung']} | {q['steer_delay']} | {q['status']} | {q['progress_frac']:.2f} | "
                      f"{q['lap_time'] if q['lap_time'] else '-'} | {q['ey_mean']:.2f} / {q['ey_max']:.2f} | {q['v_err_mean'] or float('nan'):.2f} |")
-    if "closed_free" in res:
+    if "closed_free" in res and res["closed_free"].get("gains") is None:
+        c = res["closed_free"]
+        L += ["", "## 5. 폐루프 근사 — 모델 없는 운전자", "", f"**미달: {c['note']}** (튜닝 랩 {c['tune_lap']['run']}, 기록 {c['tune_lap']['lap_time']:.2f} s)", "",
+              "| 미리보기 (s) | 비례 이득 | 결과 | 진행률 | 횡오차 평균 / 최대 (m) |", "|---|---|---|---|---|"]
+        L += [f"| {q['prev_t']} | {q['kp_v']} | {q['status']} | {q['progress_frac']:.3f} | {q['ey_mean']:.2f} / {q['ey_max']:.2f} |" for q in c["tune_lap"]["grid"]]
+    elif "closed_free" in res:
         c = res["closed_free"]
         L += ["", f"## 5. 폐루프 근사 — 모델 없는 운전자 (기록 랩타임 {c['lap_record']:.2f} s, mu_scale {c['mu']:.3f})", "",
               "학습 모델을 쓰지 않는 고전 제어기(pure pursuit + 언더스티어 보정 + 속도 PI)로 기록 주행선·기록 속도를 따라감.",
