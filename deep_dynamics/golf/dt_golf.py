@@ -23,14 +23,17 @@ N_STATE = 9
 I_DELTA = 8
 
 
-def params():
+def params(mu_dfz=None, c2=None):
     """계수: 차체는 specs (공개값), 하중 이동·타이어 모양은 Subosits 공개값, 타이어 크기는 데이터 (축별 Fiala 강성은 정적 하중에서, 마찰은 그 축이 한계에 닿은 하중 상태에서 같게; 아래 설명).
     c1_f/c1_r, mu0_f/mu0_r 는 축마다 따로 (논문은 네 바퀴 같은 타이어. 우리 데이터는 앞 138 / 뒤 161 kN/rad 로, 논문 하중 의존 모양만으로는
     재현 안 됨 → 크기는 축별 데이터, 모양 c2·μd_fz·n 은 공개값)."""
     v = golf_specs.value
+    # [11/22] mu_dfz·c2 를 주면 공개값 대신 씀 (fit_sim --model dt 의 맞춤 값, calibration_dt.json). c1·μ0 환산은 아래에서 다시 계산해
+    # 축 강성(작은 옆 가속)·축 실효 마찰(한계)이 데이터와 계속 같게 유지된다.
     p = SimpleNamespace(m=CFG.m, a=CFG.lf, b=CFG.lr, Iz=v("yaw_inertia"), h=v("cg_height"), df=v("track_f"), dr=v("track_r"),
                         gamma=v("lt_gamma"), k_lat=v("lt_k_lat"), k_long=v("lt_k_long"),
-                        c2=v("tire_c2"), mu_dfz=v("tire_mu_dfz"), n=v("tire_n"), Fz0=v("tire_Fz0"), c8=v("tire_c8"),
+                        c2=v("tire_c2") if c2 is None else c2, mu_dfz=v("tire_mu_dfz") if mu_dfz is None else mu_dfz,
+                        n=v("tire_n"), Fz0=v("tire_Fz0"), c8=v("tire_c8"),
                         T_sb=CFG.brake_front_share, Cr0=v("resist_cr0"), Cr2=v("resist_cr2"), mu_scale=1.0)
     L = p.a + p.b
     dW = 0.5 * (p.df + p.dr)

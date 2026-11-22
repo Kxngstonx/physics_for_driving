@@ -62,3 +62,19 @@ def test_tire_forces_inside_friction_circle():
         a = rng.uniform(-0.3, 0.3)
         Fy = dt_golf.tire_fy(a, Fz, Fx, "f", p)
         assert math.hypot(Fx, Fy) <= mu * Fz * (1 + 1e-9), (Fz, Fx, a, Fy)
+
+
+def test_tire_shape_override_keeps_axle_stiffness_and_friction():
+    """[11/22] μd_fz·c2 를 바꿔도 (맞춤) 축 강성(정적 하중)·축 실효 마찰(한계 하중 상태)이 데이터(specs)와 같게 유지된다."""
+    from deep_dynamics.golf import golf_specs
+    v = golf_specs.value
+    for mu_dfz, c2 in ((-0.13, 1.14), (-0.05, 2.0), (-0.2, 1.0)):
+        p = dt_golf.params(mu_dfz=mu_dfz, c2=c2)
+        L, dW = p.a + p.b, 0.5 * (p.df + p.dr)
+        for ax, Fz_s, C, mu, share in (("f", p.m * 9.81 * p.b / L / 2, v("tire_stiffness_f"), v("tire_mu_f"), p.gamma),
+                                       ("r", p.m * 9.81 * p.a / L / 2, v("tire_stiffness_r"), v("tire_mu_r"), 1 - p.gamma)):
+            c0 = getattr(p, "c1_" + ax) * p.Fz0 * math.sin(2 * math.atan(Fz_s / (p.c2 * p.Fz0)))
+            assert abs(2 * c0 - C) < 1e-6 * C
+            dla = p.h * p.m * mu * 9.81 / dW
+            cap = sum(dt_golf._mu(z, ax, p) * z for z in (Fz_s - share * dla, Fz_s + share * dla))
+            assert abs(cap - mu * 2 * Fz_s) < 1e-6 * cap

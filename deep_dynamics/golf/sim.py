@@ -206,14 +206,14 @@ class World:
     h[0, -1] = [vx, vy, r, Fxf 명령, 조향 명령, bank]. pose = (X, Y, psi). 경사는 set_grade / set_pos 로."""
 
     def __init__(self, mu_scale=1.0, delays=None, h=2e-3, grade_by_idx=None, cap=True, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0,
-                 tire_mirror=True, lsd=None, lsd_table=None, model="mb"):
+                 tire_mirror=True, lsd=None, lsd_table=None, model="mb", tire_shape=None):
         """lsd: [11/22] 앞 LSD (mb_golf 설명). None = 열린 차동장치. dict(mode='passive', T0, G) 또는 dict(mode='active', Tmax).
         lsd_table(F_cmd, vx, r) → 작동 비율 0~1: 'active' 폐루프에서 매 스텝 u 를 정하는 함수 (재생은 set_lsd 로 기록값을 넣음).
         model: [11/22] "mb" = CommonRoad 다물체 (Escort 부품 포함), "dt" = Subosits 이중 궤도 (dt_golf). dt 에는 mu_scale·k_roll·ky·rby·
         tire_mirror 가 쓰이지 않고 (계수는 specs), LSD 는 'active' 만 (u_diff = 작동 비율, 논문 식 4.28~4.29). lsd 가 None 이면 열림."""
         self.model = model
         if model == "dt":
-            self.p = dt_golf.params()
+            self.p = dt_golf.params(**(tire_shape or {}))  # tire_shape: dict(mu_dfz, c2) 맞춤 값 (calibration_dt.json)
             self.p.mu_scale = mu_scale  # 이중 궤도 마찰 배율 (calibration_dt.json, calibrate_sim --model dt)
             if lsd:
                 assert lsd["mode"] == "active", "이중 궤도 모델의 LSD 는 u_diff (active) 만"
@@ -296,7 +296,8 @@ def calibrated_world(**kw):
     model='dt' 이면 calibration_dt.json 의 마찰 배율만 쓴다 (다물체 보정값은 쓰지 않음)."""
     if kw.get("model") == "dt":
         cal = load_calibration(CALIB_DT)
-        base = dict(mu_scale=cal.get("mu_scale", 1.0), delays=load_delays())
+        base = dict(mu_scale=cal.get("mu_scale", 1.0), delays=load_delays(),
+                    tire_shape={k: cal[k] for k in ("mu_dfz", "c2") if k in cal} or None)
         if "delays" in kw and kw["delays"] is not None and base["delays"]:
             kw["delays"] = dict(base["delays"], **kw["delays"])
         return World(**dict(base, **kw))
