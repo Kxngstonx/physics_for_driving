@@ -3,7 +3,7 @@
 원본: commonroad-vehicle-models 3.0.2, vehiclemodels/vehicle_dynamics_mb.py (TUM Cyber-Physical Systems Group,
 BSD 라이선스 — 같은 폴더의 LICENSE_commonroad_vehicle_models.txt). 원본 패키지는 고치지 않았다.
 
-바꾼 것 (아래 세 가지뿐. 그 밖의 줄은 원본과 같음):
+바꾼 것 (아래 네 가지뿐. 그 밖의 줄은 원본과 같음):
   - 타이어 계수: 앞바퀴(LF, RF)는 p.tire_f, 뒷바퀴(LR, RR)는 p.tire_r (원본은 넷 다 같은 p.tire).
     이유: 원본 타이어는 횡강성이 하중에 정비례(K_y = p_ky1·F_z)라 앞뒤 축 강성 비가 하중 비와 같아져 언더스티어가 거의 0.
     실제 Golf 는 20~35 m/s 에서 조향 대비 회전 반응이 운동학 값의 0.44~0.48 배 (강한 언더스티어) [확인 11/18].
@@ -18,6 +18,8 @@ BSD 라이선스 — 같은 폴더의 LICENSE_commonroad_vehicle_models.txt). �
     (MBSim magic_formula_62 와 같은 규칙. Project Chrono ChPac02Tire·shift-dynamics pac2002 는 같은 효과를 계수 부호로 냄).
     [11/22 채택] 시뮬레이터 기본은 거울상 (sim.golf_params tire_mirror=True). False 면 원본과 같음 (비교 재현용:
     experiments/golf/compare_tire_mirror.py). 앞뒤 방향 힘은 그대로 (거울상 대상 아님)
+  - [11/22] 앞 차동장치 LSD (선택, p.lsd_mode, 바퀴 회전 식 바로 위 설명). 원본은 앞 좌우에 구동 토크를 항상 반씩 (열린 차동장치).
+    실제 차(Golf GTI Performance)는 전자식 LSD(VAQ)가 있고 데이터의 LSDengage_percent 가 가속 코너의 42% 에서 0 이 아님
 """
 import math
 
@@ -392,9 +394,20 @@ def vehicle_dynamics_mb(x, uInit, p):
     else:
         k_abs = [1.0, 1.0, 1.0, 1.0]
 
+    # [11/22] 앞 차동장치 LSD (선택, p.lsd_mode). 마찰 클러치: 빠른 바퀴 → 느린 바퀴로 토크 dT 이동 (|dT| ≤ 잠김 토크).
+    # 회전 차이 0 근처는 tanh 로 매끄럽게 (TUM Open-Car-Dynamics drivetrain_rwd_lsd 와 같은 형태, eps = 1 rad/s).
+    # 'passive': 잠김 토크 = T0 + G·max(T_E, 0)  (기본 + 구동 토크 비율; TUM OCD, van Koutrik 2015 와 같은 형태)
+    # 'active' : 잠김 토크 = u·Tmax  (VW VAQ: 유압 비례, 최대 1,600 Nm, u = 작동 비율 0~1, 밖에서 넣음)
+    # None (기본): 열린 차동장치, 원본과 같음
+    dT = 0.0
+    lsd_mode = getattr(p, "lsd_mode", None)
+    if lsd_mode:
+        T_lock = (p.lsd_T0 + p.lsd_G * max(T_E, 0.0)) if lsd_mode == "passive" else p.lsd_u * p.lsd_Tmax
+        dT = T_lock * math.tanh((x[23] - x[24]) / p.lsd_eps)  # 왼쪽이 빠르면 + : 왼쪽 → 오른쪽으로 옮김
+
     #wheel dynamics (p.T  new parameter for torque splitting)
-    f.append(1/p.I_y_w*(-p.R_w*F_x_LF + 0.5*p.T_sb*T_B*k_abs[0] + 0.5*p.T_se*T_E))
-    f.append(1/p.I_y_w*(-p.R_w*F_x_RF + 0.5*p.T_sb*T_B*k_abs[1] + 0.5*p.T_se*T_E))
+    f.append(1/p.I_y_w*(-p.R_w*F_x_LF + 0.5*p.T_sb*T_B*k_abs[0] + 0.5*p.T_se*T_E - 0.5*dT))
+    f.append(1/p.I_y_w*(-p.R_w*F_x_RF + 0.5*p.T_sb*T_B*k_abs[1] + 0.5*p.T_se*T_E + 0.5*dT))
     f.append(1/p.I_y_w*(-p.R_w*F_x_LR + 0.5*(1-p.T_sb)*T_B*k_abs[2] + 0.5*(1-p.T_se)*T_E))
     f.append(1/p.I_y_w*(-p.R_w*F_x_RR + 0.5*(1-p.T_sb)*T_B*k_abs[3] + 0.5*(1-p.T_se)*T_E))
 

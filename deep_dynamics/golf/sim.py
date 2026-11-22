@@ -203,8 +203,16 @@ class World:
     h[0, -1] = [vx, vy, r, Fxf 명령, 조향 명령, bank]. pose = (X, Y, psi). 경사는 set_grade / set_pos 로."""
 
     def __init__(self, mu_scale=1.0, delays=None, h=2e-3, grade_by_idx=None, cap=True, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0,
-                 tire_mirror=True):
+                 tire_mirror=True, lsd=None, lsd_table=None):
+        """lsd: [11/22] 앞 LSD (mb_golf 설명). None = 열린 차동장치. dict(mode='passive', T0, G) 또는 dict(mode='active', Tmax).
+        lsd_table(F_cmd, vx, r) → 작동 비율 0~1: 'active' 폐루프에서 매 스텝 u 를 정하는 함수 (재생은 set_lsd 로 기록값을 넣음)."""
         self.p = golf_params(mu_scale, k_roll, ky_f, ky_r, rby_f, tire_mirror)
+        self.p.lsd_mode = None
+        if lsd:
+            self.p.lsd_mode, self.p.lsd_eps = lsd["mode"], lsd.get("eps", 1.0)
+            self.p.lsd_T0, self.p.lsd_G = lsd.get("T0", 0.0), lsd.get("G", 0.0)
+            self.p.lsd_Tmax, self.p.lsd_u = lsd.get("Tmax", 1600.0), 0.0
+        self.lsd_table, self.lsd_override = lsd_table, None
         self.act = Actuator(delays, h)
         self.h, self.cap = h, cap
         self.n_sub = int(round(DT / h))
@@ -219,6 +227,10 @@ class World:
 
     def set_grade(self, grade):
         self.g_slope = G * math.sin(float(grade))
+
+    def set_lsd(self, u):
+        """'active' LSD 작동 비율 (0~1) 을 직접 넣음 (재생: 데이터 기록값). None 이면 lsd_table 을 씀."""
+        self.lsd_override = u
 
     def set_pos(self, idx):
         if self.grade_by_idx is not None:
@@ -238,6 +250,9 @@ class World:
         if self.cap:
             F_cmd = min(max(F_cmd, F_BRAKE_MIN), float(force_cap(self.x[3])))
         dv = (self.act.steer_target(delta_cmd) - self.x[2]) / DT
+        if self.p.lsd_mode == "active":  # [11/22] 이 간격의 LSD 작동 비율 (기록값 또는 표)
+            self.p.lsd_u = self.lsd_override if self.lsd_override is not None else (
+                float(self.lsd_table(F_cmd, self.x[3], self.x[5])) if self.lsd_table else 0.0)
         x = self.x
         try:
             for _ in range(self.n_sub):
