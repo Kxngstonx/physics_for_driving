@@ -34,7 +34,7 @@ import numpy as np
 from vehiclemodels.init_mb import init_mb
 from vehiclemodels.parameters_vehicle1 import parameters_vehicle1
 
-from . import golf_specs
+from . import dt_golf, golf_specs
 from .configs import GOLF_THUNDERHILL as CFG
 from .mb_golf import vehicle_dynamics_mb
 
@@ -153,13 +153,15 @@ def rhs(x, u, p, g_slope=0.0):
     return f
 
 
-def rk4(x, u, p, h, g_slope=0.0):
-    k1 = rhs(x, u, p, g_slope)
-    k2 = rhs([a + 0.5 * h * b for a, b in zip(x, k1)], u, p, g_slope)
-    k3 = rhs([a + 0.5 * h * b for a, b in zip(x, k2)], u, p, g_slope)
-    k4 = rhs([a + h * b for a, b in zip(x, k3)], u, p, g_slope)
+def rk4(x, u, p, h, g_slope=0.0, f=None):
+    """f: 미분 함수 (기본 = 다물체 rhs, 이중 궤도는 dt_golf.rhs)."""
+    f = f or rhs
+    k1 = f(x, u, p, g_slope)
+    k2 = f([a + 0.5 * h * b for a, b in zip(x, k1)], u, p, g_slope)
+    k3 = f([a + 0.5 * h * b for a, b in zip(x, k2)], u, p, g_slope)
+    k4 = f([a + h * b for a, b in zip(x, k3)], u, p, g_slope)
     x = [a + h / 6.0 * (b + 2 * c + 2 * d + e) for a, b, c, d, e in zip(x, k1, k2, k3, k4)]
-    for i in range(23, 27):  # 바퀴 역회전 금지 (패키지와 같은 처리)
+    for i in range(23, min(27, len(x))):  # 바퀴 역회전 금지 (다물체만, 패키지와 같은 처리)
         x[i] = max(x[i], 0.0)
     return x
 
@@ -203,12 +205,21 @@ class World:
     h[0, -1] = [vx, vy, r, Fxf 명령, 조향 명령, bank]. pose = (X, Y, psi). 경사는 set_grade / set_pos 로."""
 
     def __init__(self, mu_scale=1.0, delays=None, h=2e-3, grade_by_idx=None, cap=True, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0,
-                 tire_mirror=True, lsd=None, lsd_table=None):
+                 tire_mirror=True, lsd=None, lsd_table=None, model="mb"):
         """lsd: [11/22] 앞 LSD (mb_golf 설명). None = 열린 차동장치. dict(mode='passive', T0, G) 또는 dict(mode='active', Tmax).
-        lsd_table(F_cmd, vx, r) → 작동 비율 0~1: 'active' 폐루프에서 매 스텝 u 를 정하는 함수 (재생은 set_lsd 로 기록값을 넣음)."""
-        self.p = golf_params(mu_scale, k_roll, ky_f, ky_r, rby_f, tire_mirror)
-        self.p.lsd_mode = None
-        if lsd:
+        lsd_table(F_cmd, vx, r) → 작동 비율 0~1: 'active' 폐루프에서 매 스텝 u 를 정하는 함수 (재생은 set_lsd 로 기록값을 넣음).
+        model: [11/22] "mb" = CommonRoad 다물체 (Escort 부품 포함), "dt" = Subosits 이중 궤도 (dt_golf). dt 에는 mu_scale·k_roll·ky·rby·
+        tire_mirror 가 쓰이지 않고 (계수는 specs), LSD 는 'active' 만 (u_diff = 작동 비율, 논문 식 4.28~4.29). lsd 가 None 이면 열림."""
+        self.model = model
+        if model == "dt":
+            self.p = dt_golf.params()
+            if lsd:
+                assert lsd["mode"] == "active", "이중 궤도 모델의 LSD 는 u_diff (active) 만"
+                self.p.lsd_mode = "active"
+        else:
+            self.p = golf_params(mu_scale, k_roll, ky_f, ky_r, rby_f, tire_mirror)
+            self.p.lsd_mode = None
+        if lsd and model != "dt":
             self.p.lsd_mode, self.p.lsd_eps = lsd["mode"], lsd.get("eps", 1.0)
             self.p.lsd_T0, self.p.lsd_G = lsd.get("T0", 0.0), lsd.get("G", 0.0)
             self.p.lsd_Tmax, self.p.lsd_u = lsd.get("Tmax", 1600.0), 0.0
@@ -221,8 +232,11 @@ class World:
         self.x = None
 
     def reset(self, X, Y, psi, vx, vy=0.0, r=0.0, delta=0.0, F0=0.0):
-        v = math.hypot(vx, vy)
-        self.x = init_mb([X, Y, delta, v, psi, r, math.atan2(vy, vx)], self.p)
+        if self.model == "dt":
+            self.x = dt_golf.init(X, Y, psi, vx, vy, r, delta)
+        else:
+            v = math.hypot(vx, vy)
+            self.x = init_mb([X, Y, delta, v, psi, r, math.atan2(vy, vx)], self.p)
         self.act.reset(F0, delta)
 
     def set_grade(self, grade):
@@ -238,25 +252,31 @@ class World:
 
     @property
     def pose(self):
-        return self.x[0], self.x[1], self.x[4]
+        return (self.x[0], self.x[1], self.x[2]) if self.model == "dt" else (self.x[0], self.x[1], self.x[4])
 
     @property
     def state(self):
-        return self.x[3], self.x[10], self.x[5]
+        return (self.x[3], self.x[4], self.x[5]) if self.model == "dt" else (self.x[3], self.x[10], self.x[5])
 
     def step(self, F_cmd, delta_cmd):
         """한 제어 간격 (0.04 s). 조향은 지연된 목표에 0.04 s 동안 일정한 조향 속도로 도달.
         힘 범위(제동 하한, 속도별 구동력 상한)는 간격 시작의 속도로 한 번 정함."""
         if self.cap:
             F_cmd = min(max(F_cmd, F_BRAKE_MIN), float(force_cap(self.x[3])))
-        dv = (self.act.steer_target(delta_cmd) - self.x[2]) / DT
+        i_delta = dt_golf.I_DELTA if self.model == "dt" else 2
+        dv = (self.act.steer_target(delta_cmd) - self.x[i_delta]) / DT
+        if self.model == "dt":  # 다물체는 패키지가 조향 속도를 자름 (golf_params steering.v_max); 이중 궤도는 여기서
+            dv = max(-STEER_RATE_MAX, min(STEER_RATE_MAX, dv))
         if self.p.lsd_mode == "active":  # [11/22] 이 간격의 LSD 작동 비율 (기록값 또는 표)
             self.p.lsd_u = self.lsd_override if self.lsd_override is not None else (
                 float(self.lsd_table(F_cmd, self.x[3], self.x[5])) if self.lsd_table else 0.0)
         x = self.x
         try:
             for _ in range(self.n_sub):
-                x = rk4(x, [dv, accel_input(self.act.force_step(F_cmd), self.p)], self.p, self.h, self.g_slope)
+                if self.model == "dt":  # 앞바퀴 힘을 그대로 (바퀴 회전 상태 없음 → 바퀴 관성 보정 없음)
+                    x = rk4(x, [dv, self.act.force_step(F_cmd), self.p.lsd_u], self.p, self.h, self.g_slope, f=dt_golf.rhs)
+                else:
+                    x = rk4(x, [dv, accel_input(self.act.force_step(F_cmd), self.p)], self.p, self.h, self.g_slope)
         except (ZeroDivisionError, ValueError, OverflowError):  # 완전히 미끄러져 식이 계산되지 않음 (예: 바퀴 속도 0)
             x = [math.nan] * len(x)  # → episode() 가 world_nan 으로 끝냄
         self.x = x
