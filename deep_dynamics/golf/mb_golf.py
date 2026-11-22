@@ -16,7 +16,8 @@ BSD 라이선스 — 같은 폴더의 LICENSE_commonroad_vehicle_models.txt). �
     (네 바퀴 부호가 같아지면 차가 옆으로 흐름) [확인 11/21]. p.tire_mirror=True 이면 표준 PAC2002 식(부호 함수 없음,
     _lateral_std)을 쓰고, 측정 쪽(왼쪽)과 반대인 오른쪽 바퀴는 타이어를 거울상으로 쓴다: Fy_R(κ, α, γ) = −Fy_L(κ, −α, −γ)
     (MBSim magic_formula_62 와 같은 규칙. Project Chrono ChPac02Tire·shift-dynamics pac2002 는 같은 효과를 계수 부호로 냄).
-    False 면 원본과 같음. 앞뒤 방향 힘은 그대로 (거울상 대상 아님)
+    [11/22 채택] 시뮬레이터 기본은 거울상 (sim.golf_params tire_mirror=True). False 면 원본과 같음 (비교 재현용:
+    experiments/golf/compare_tire_mirror.py). 앞뒤 방향 힘은 그대로 (거울상 대상 아님)
 """
 import math
 

@@ -85,7 +85,7 @@ def _tire_stiffness():
     return _v("tire_stiffness_f"), _v("tire_stiffness_r")
 
 
-def golf_params(mu_scale=1.0, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0, tire_mirror=False):
+def golf_params(mu_scale=1.0, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0, tire_mirror=True):
     """CommonRoad 파라미터 (Escort 위에 Golf 값). k_roll None = Escort 서스펜션 그대로 (보정값은 calibrated_world 가 넣음).
     [11/19] 실제 주행 데이터로 함께 맞추는 배율 (experiments/golf/fit_sim.py): ky_f·ky_r = 앞·뒤 타이어 옆 강성 배율,
     rby_f = 앞 타이어가 앞으로 미는 동안 옆 힘이 줄어드는 정도(PAC2002 결합 미끄럼 r_by1) 배율."""
@@ -100,7 +100,7 @@ def golf_params(mu_scale=1.0, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0, tire_m
         set_roll_stiffness(p, k_roll)
     p.T_se, p.T_sb = 1.0, CFG.brake_front_share
     p.abs_slip = ABS_SLIP
-    p.tire_mirror = tire_mirror  # [11/21] 타이어 좌우 거울상 (mb_golf 모듈 설명). False = CommonRoad 원본 식
+    p.tire_mirror = tire_mirror  # 타이어 좌우 거울상 (mb_golf 모듈 설명). [11/22 채택] 기본 True. False = CommonRoad 원본 식 (비교 재현용)
     # 제한 풀기: 가속 상한 a_max·v_switch/v (Escort: 30 m/s 에서 1.8 m/s², Golf 데이터 2.9), 최고 속도 45.8, 조향 속도 0.4 rad/s
     p.longitudinal.a_max = 1e3
     p.longitudinal.v_switch = 1e3
@@ -203,7 +203,7 @@ class World:
     h[0, -1] = [vx, vy, r, Fxf 명령, 조향 명령, bank]. pose = (X, Y, psi). 경사는 set_grade / set_pos 로."""
 
     def __init__(self, mu_scale=1.0, delays=None, h=2e-3, grade_by_idx=None, cap=True, k_roll=None, ky_f=1.0, ky_r=1.0, rby_f=1.0,
-                 tire_mirror=False):
+                 tire_mirror=True):
         self.p = golf_params(mu_scale, k_roll, ky_f, ky_r, rby_f, tire_mirror)
         self.act = Actuator(delays, h)
         self.h, self.cap = h, cap
@@ -257,14 +257,14 @@ class World:
 def calibrated_world(**kw):
     """보정값(calibration.json: mu_scale, k_roll)과 지연(delays.json)을 넣은 World. kw 로 덮어쓸 수 있음."""
     cal = load_calibration()
-    base = dict(mu_scale=cal.get("mu_scale", 1.0), k_roll=cal.get("k_roll"), delays=load_delays(), tire_mirror=cal.get("tire_mirror", False),
+    base = dict(mu_scale=cal.get("mu_scale", 1.0), k_roll=cal.get("k_roll"), delays=load_delays(), tire_mirror=cal.get("tire_mirror", True),
                 **{k: cal[k] for k in ("ky_f", "ky_r", "rby_f") if k in cal})
     if "delays" in kw and kw["delays"] is not None and base["delays"]:
         kw["delays"] = dict(base["delays"], **kw["delays"])
     return World(**dict(base, **kw))
 
 
-def roll_gradient(mu_scale=1.0, k_roll=None, v=25.0, delta=0.05, steps=150, tire_mirror=False):
+def roll_gradient(mu_scale=1.0, k_roll=None, v=25.0, delta=0.05, steps=150, tire_mirror=True):
     """정상 원선회의 롤 기울기 (도 / (m/s²)) 와 그때의 횡가속도."""
     w = World(mu_scale=mu_scale, k_roll=k_roll, cap=False, tire_mirror=tire_mirror)
     w.reset(0, 0, 0, v)

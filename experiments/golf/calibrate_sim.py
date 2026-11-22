@@ -1,6 +1,6 @@
 """시뮬레이터 보정 두 가지 (docs/experiment_plan_golf.md 4-4절, [결정 11/19]).
 
-  python experiments/golf/calibrate_sim.py [--tire-mirror] [--out 경로]   → 기본 experiments/golf/results/sim/calibration.json
+  python experiments/golf/calibrate_sim.py [--no-tire-mirror] [--out 경로]   → 기본 experiments/golf/results/sim/calibration.json
 
 1. 롤 강성 k_roll: 정상 원선회(25 m/s, 횡가속도 약 4~6 m/s²)의 롤 기울기가 ROLL_TARGET 이 되도록 안티롤바를 맞춤
    (스프링은 Escort 그대로, 앞뒤 몫 0.61 유지). 롤 기울기 = 차체 기울기(도) ÷ 횡가속도(m/s²)
@@ -34,7 +34,7 @@ def hold_speed(w, v):
     return sim.road_load(w.state[0]) + w.p.m * 0.5 * (v - w.state[0])
 
 
-def max_ay(mu, k_roll, v=20.0, T=15.0, tire_mirror=False):
+def max_ay(mu, k_roll, v=20.0, T=15.0, tire_mirror=True):
     w = sim.World(mu_scale=mu, k_roll=k_roll, cap=False, tire_mirror=tire_mirror)
     w.reset(0, 0, 0, v)
     best, n = 0.0, int(T / sim.DT)
@@ -56,7 +56,7 @@ def bisect(f, lo, hi, target, n=12, increasing=True):
     return 0.5 * (lo + hi)
 
 
-def calibrate(tire_mirror=False):
+def calibrate(tire_mirror=True):
     """롤 강성·마찰 배율을 번갈아 3번 맞춤 → calibration dict. tire_mirror: 타이어 좌우 거울상 (mb_golf, 11/21)."""
     target_ay = ay_p99()
     k_escort = sim.roll_stiffness(sim.golf_params(1.0, None))  # Golf 윤거에서의 Escort 롤 강성
@@ -79,9 +79,9 @@ def calibrate(tire_mirror=False):
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--tire-mirror", action="store_true", help="타이어 좌우 거울상 (mb_golf, 11/21)")
+    ap.add_argument("--no-tire-mirror", action="store_true", help="CommonRoad 원본 타이어 식 (비교 재현용. 기본 = 표준 거울상, 11/22 채택)")
     ap.add_argument("--out", default=OUT, help="출력 파일 (기본: results/sim/calibration.json)")
     a = ap.parse_args()
-    cal = calibrate(a.tire_mirror)
+    cal = calibrate(not a.no_tire_mirror)
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     json.dump(cal, open(a.out, "w"), indent=1)
