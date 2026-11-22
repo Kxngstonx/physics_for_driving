@@ -1,7 +1,7 @@
 {
  "note": "Golf 차량 계수 (estimate_specs.py 가 만듦, 손으로 고치지 말 것). 출처 규칙·결정: docs/experiment_plan_golf.md [결정 11/21]",
- "generated": "2026-11-21T23:13:34",
- "code_commit": "eff2f7b",
+ "generated": "2026-11-22T17:43:50",
+ "code_commit": "fd042bf",
  "data_files": [
   "2023-10",
   "2023-10_1",
@@ -342,6 +342,50 @@
    "source": "data",
    "basis": "자동 운전 구간의 명령 → 실제 (브레이크 압력, 엔진 토크): 순수 지연 + 1차 지연 (초). 지연 없음보다 오차가 1% 이상 줄 때만 사용 (use)",
    "files": 20
+  },
+  "lt_gamma": {
+   "value": 0.64,
+   "source": "published",
+   "basis": "앞 축이 맡는 옆 하중 이동 비율 γ. Subosits 박사논문 2020 (Stanford DDL, 썬더힐 GTI 이중 궤도 모델) 부록 A 표 A.1. 논문: 롤 강성 분배를 나타내며 한계의 언더·오버스티어를 정하는 가장 중요한 계수"
+  },
+  "lt_k_lat": {
+   "value": 23.2,
+   "source": "published",
+   "basis": "옆 하중 이동 1차 지연 상수 (1/s). Subosits 박사논문 2020 (Stanford DDL, 썬더힐 GTI 이중 궤도 모델) 표 A.1"
+  },
+  "lt_k_long": {
+   "value": 15.7,
+   "source": "published",
+   "basis": "앞뒤 하중 이동 1차 지연 상수 (1/s). Subosits 박사논문 2020 (Stanford DDL, 썬더힐 GTI 이중 궤도 모델) 표 A.1"
+  },
+  "tire_c2": {
+   "value": 1.14,
+   "source": "published",
+   "basis": "타이어 코너링 강성의 하중 의존 모양 c2 (강성이 최대가 되는 하중 / Fz0). Subosits 박사논문 2020 (Stanford DDL, 썬더힐 GTI 이중 궤도 모델) 표 A.4 마른 노면. 축 단위 Fiala 로는 식별 안 됨"
+  },
+  "tire_mu_dfz": {
+   "value": -0.13,
+   "source": "published",
+   "basis": "마찰의 하중 감도 μd_fz (μ = μ0 + μd_fz·(Fz − Fz0)/Fz0). Subosits 박사논문 2020 (Stanford DDL, 썬더힐 GTI 이중 궤도 모델) 표 A.4. 축 단위 Fiala 로는 식별 안 됨"
+  },
+  "tire_n": {
+   "value": 4.03,
+   "source": "published",
+   "basis": "옆·앞뒤 결합 미끄럼 지수 n (식 4.20). Subosits 박사논문 2020 (Stanford DDL, 썬더힐 GTI 이중 궤도 모델) 표 A.4"
+  },
+  "tire_Fz0": {
+   "value": 4470.0,
+   "source": "assumed",
+   "basis": "타이어 기준 하중 Fz0 (N, 바퀴당). 공개 표 A.4 의 8,940 이 바퀴당인지 축당인지 확인 안 됨 (어느 쪽도 같은 논문의 단일 궤도 강성을 재현하지 못함). 같은 논문 표 A.2·A.3 값 4,470 (= 8,940 의 절반, 우리 바퀴당 정적 하중 4,000~4,800 수준)으로 둠. 강성·마찰의 크기는 데이터에 맞춰 환산하므로 하중 의존 모양에만 영향 (11/22)"
+  },
+  "tire_c8": {
+   "value": 27.864891172924903,
+   "source": "data",
+   "basis": "앞뒤 방향 타이어 강성 (하중당, Cx = c8·Fz). 직진 구동 표본에 Fiala 앞뒤 곡선을 맞춤 (11/22). 공개값(Subosits 표 A.4) 12.8 과 다름. 바퀴 반지름 ±0.2% 에 ±10% 흔들림. 제동 쪽은 식별 안 됨",
+   "files": 20,
+   "n": 27155,
+   "mu_long": 1.0771809596847333,
+   "kappa_p99": 0.13557963366608927
   }
  }
 }

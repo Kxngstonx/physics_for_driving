@@ -442,6 +442,32 @@ def est_fiala(names, m, a, b, Iz, eta, gears, wheel_r):
     return out
 
 
+def est_long_stiffness(names, m, a, b, h, eta, gears, wheel_r):
+    """앞 축 앞뒤 방향 강성 (하중당, 1/미끄럼률): 직진 구동 표본에 Fiala(브러시) 앞뒤 방향 곡선을 맞춤 (11/22 분석).
+    미끄럼률 κ = (ω·R − v)/v (앞 좌우 평균), 브러시 변수 σ = κ/(1+κ). 힘 = Fxf (구동력 100 ms 늦춤), 하중 = 정적 + 앞뒤 하중 이동.
+    표본: 8 m/s 이상, |r| < 0.05, |δ| < 0.02, 구동 중(구동력 > 300 N, Fxf > 0). 제동 쪽은 Fx/Fz ≤ 0.44 라 식별 안 됨 (11/22)."""
+    from scipy.optimize import least_squares
+    L = a + b
+    K, Fx, Fz = [], [], []
+    for n in names:
+        df = D.read_raw(n, gears=gears, wheel_r=wheel_r, drive_eff=eta)
+        sm = lambda c: S.smooth(df[c].to_numpy(float), 5.0, 200)[::2]
+        v, r, d = sm("Vx_mps"), sm("yawRate_radps"), sm("roadWheelAngle_rad")
+        wf = 0.5 * (sm("wheelspeed_fl") + sm("wheelspeed_fr"))
+        Fd = sm("F_drive"); Fd = np.r_[np.full(LAG // 2, Fd[0]), Fd[:-(LAG // 2)]]
+        Ff = eta * Fd - sm("F_brake_f")
+        ax = S.deriv(S.smooth(df["Vx_mps"].to_numpy(float), 2.0, 200), 200)[::2]
+        k = (v > 8) & (np.abs(r) < 0.05) & (np.abs(d) < 0.02) & (Fd > 300) & (Ff > 0)
+        k[:200] = k[-200:] = False
+        K.append(((wf * wheel_r - v) / v)[k]); Fx.append(Ff[k]); Fz.append((m * G * b / L - m * ax * h / L)[k])
+    K, Fx, Fz = map(np.concatenate, (K, Fx, Fz))
+    sig = K / (1 + K)
+    f = lambda C, mu: np.where(np.abs(sig) < 3 * mu * Fz / C, C * sig - C ** 2 / (3 * mu * Fz) * np.abs(sig) * sig + C ** 3 / (27 * mu ** 2 * Fz ** 2) * sig ** 3, mu * Fz * np.sign(sig))
+    sol = least_squares(lambda p: (f(p[0] * 1e5, p[1]) - Fx) / Fz, [2.0, 1.0], bounds=([0.05, 0.2], [20.0, 3.0]))
+    C, mu = sol.x[0] * 1e5, sol.x[1]
+    return float(C / np.median(Fz)), dict(n=int(len(K)), mu_long=float(mu), kappa_p99=float(np.percentile(np.abs(K), 99)))
+
+
 def build_specs():
     """specs.json 내용. 이전 specs.json 을 읽지 않는다 (순서: 반지름·감속비 → 구동력 → 효율 → Fiala·상한표)."""
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -512,6 +538,19 @@ def build_specs():
     dl = FD.estimate()
     put("actuator_delays", {k: dict(use=dl[k]["use"], fit=dl[k]["fit"], rms=dl[k]["rms"], rms_no_delay=dl[k]["rms_no_delay"]) for k in ("brake", "engine")},
         "data", "자동 운전 구간의 명령 → 실제 (브레이크 압력, 엔진 토크): 순수 지연 + 1차 지연 (초). 지연 없음보다 오차가 1% 이상 줄 때만 사용 (use)", files=nf)
+    # ---- [11/22] 이중 궤도 시뮬레이터 (Subosits 박사논문 2020 4.2절, 같은 썬더힐 GTI) 계수
+    SUB = "Subosits 박사논문 2020 (Stanford DDL, 썬더힐 GTI 이중 궤도 모델)"
+    put("lt_gamma", 0.64, "published", f"앞 축이 맡는 옆 하중 이동 비율 γ. {SUB} 부록 A 표 A.1. 논문: 롤 강성 분배를 나타내며 한계의 언더·오버스티어를 정하는 가장 중요한 계수")
+    put("lt_k_lat", 23.2, "published", f"옆 하중 이동 1차 지연 상수 (1/s). {SUB} 표 A.1")
+    put("lt_k_long", 15.7, "published", f"앞뒤 하중 이동 1차 지연 상수 (1/s). {SUB} 표 A.1")
+    put("tire_c2", 1.14, "published", f"타이어 코너링 강성의 하중 의존 모양 c2 (강성이 최대가 되는 하중 / Fz0). {SUB} 표 A.4 마른 노면. 축 단위 Fiala 로는 식별 안 됨")
+    put("tire_mu_dfz", -0.13, "published", f"마찰의 하중 감도 μd_fz (μ = μ0 + μd_fz·(Fz − Fz0)/Fz0). {SUB} 표 A.4. 축 단위 Fiala 로는 식별 안 됨")
+    put("tire_n", 4.03, "published", f"옆·앞뒤 결합 미끄럼 지수 n (식 4.20). {SUB} 표 A.4")
+    put("tire_Fz0", 4470.0, "assumed", "타이어 기준 하중 Fz0 (N, 바퀴당). 공개 표 A.4 의 8,940 이 바퀴당인지 축당인지 확인 안 됨 (어느 쪽도 같은 논문의 단일 궤도 강성을 재현하지 못함). "
+        "같은 논문 표 A.2·A.3 값 4,470 (= 8,940 의 절반, 우리 바퀴당 정적 하중 4,000~4,800 수준)으로 둠. 강성·마찰의 크기는 데이터에 맞춰 환산하므로 하중 의존 모양에만 영향 (11/22)")
+    c8, ci = est_long_stiffness(names, m, it["cg_a"]["value"], it["cg_b"]["value"], it["cg_height"]["value"], eta, gr, wr)
+    put("tire_c8", c8, "data", "앞뒤 방향 타이어 강성 (하중당, Cx = c8·Fz). 직진 구동 표본에 Fiala 앞뒤 곡선을 맞춤 (11/22). 공개값(Subosits 표 A.4) 12.8 과 다름. "
+        "바퀴 반지름 ±0.2% 에 ±10% 흔들림. 제동 쪽은 식별 안 됨", files=nf, **ci)
     return it
 
 
