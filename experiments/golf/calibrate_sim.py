@@ -34,8 +34,8 @@ def hold_speed(w, v):
     return sim.road_load(w.state[0]) + w.p.m * 0.5 * (v - w.state[0])
 
 
-def max_ay(mu, k_roll, v=20.0, T=15.0, tire_mirror=True):
-    w = sim.World(mu_scale=mu, k_roll=k_roll, cap=False, tire_mirror=tire_mirror)
+def max_ay(mu, k_roll, v=20.0, T=15.0, tire_mirror=True, model="mb"):
+    w = sim.World(mu_scale=mu, k_roll=k_roll, cap=False, tire_mirror=tire_mirror, model=model)
     w.reset(0, 0, 0, v)
     best, n = 0.0, int(T / sim.DT)
     for k in range(n):
@@ -76,12 +76,25 @@ def calibrate(tire_mirror=True):
                 track=[sim.TRACK_F, sim.TRACK_R], tire_mirror=tire_mirror)
 
 
+def calibrate_dt():
+    """[11/22] 이중 궤도 (dt_golf): 롤 강성이 없으므로 마찰 배율만, 다물체와 같은 목표 (정상 선회 최대 옆 가속도 = specs ay_target).
+    이유: 타이어 크기는 데이터 Fiala 축 마찰(하중 이동 손실이 이미 들어간 실효값)에 맞췄는데, 모델이 하중 감도로 손실을 한 번 더 빼서
+    최대 옆 가속도가 8.26 (목표 10.66) 으로 낮게 나옴 → 다물체와 같은 절차로 맞춘다."""
+    target_ay = ay_p99()
+    mu = bisect(lambda m: max_ay(m, None, model="dt"), 0.8, 2.0, target_ay)
+    ay_max = max_ay(mu, None, model="dt")
+    print(f"이중 궤도: mu_scale {mu:.3f} → 최대 옆 가속도 {ay_max:.2f} (목표 {target_ay:.2f}, 배율 1 이면 {max_ay(1.0, None, model='dt'):.2f})", flush=True)
+    return dict(model="dt", mu_scale=round(mu, 3), ay_target=target_ay, max_ay=ay_max)
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-tire-mirror", action="store_true", help="CommonRoad 원본 타이어 식 (비교 재현용. 기본 = 표준 거울상, 11/22 채택)")
-    ap.add_argument("--out", default=OUT, help="출력 파일 (기본: results/sim/calibration.json)")
+    ap.add_argument("--model", default="mb", choices=["mb", "dt"], help="mb = 다물체 (롤 강성·마찰), dt = 이중 궤도 (마찰만, 기본 출력 calibration_dt.json)")
+    ap.add_argument("--out", default=None, help="출력 파일 (기본: results/sim/calibration.json, dt 는 calibration_dt.json)")
     a = ap.parse_args()
-    cal = calibrate(not a.no_tire_mirror)
+    a.out = a.out or (sim.CALIB_DT if a.model == "dt" else OUT)
+    cal = calibrate_dt() if a.model == "dt" else calibrate(not a.no_tire_mirror)
     os.makedirs(os.path.dirname(a.out), exist_ok=True)
     json.dump(cal, open(a.out, "w"), indent=1)

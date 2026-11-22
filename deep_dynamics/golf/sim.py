@@ -43,7 +43,8 @@ DT = CFG.dt
 _v = golf_specs.value
 WHEEL_R = _v("wheel_radius")
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-CALIB = os.path.join(REPO, "experiments/golf/results/sim/calibration.json")  # experiments/golf/calibrate_sim.py 출력
+CALIB = os.path.join(REPO, "experiments/golf/results/sim/calibration.json")  # experiments/golf/calibrate_sim.py 출력 (다물체)
+CALIB_DT = os.path.join(REPO, "experiments/golf/results/sim/calibration_dt.json")  # calibrate_sim.py --model dt 출력 (이중 궤도: 마찰 배율만)
 TRACK_F, TRACK_R = _v("track_f"), _v("track_r")  # 윤거 (공개, Subosits 2020). Escort(1.39/1.42 m)는 15 cm 좁아 전복에 가까웠다
 ROLL_FRONT_SHARE = _v("roll_front_share")  # 롤 강성 앞 몫 (가정: Escort 원래 값 유지)
 ABS_SLIP = tuple(_v("abs_slip"))  # 이 미끄럼률 사이에서 브레이크 토크를 1 → 0 (가정)
@@ -213,6 +214,7 @@ class World:
         self.model = model
         if model == "dt":
             self.p = dt_golf.params()
+            self.p.mu_scale = mu_scale  # 이중 궤도 마찰 배율 (calibration_dt.json, calibrate_sim --model dt)
             if lsd:
                 assert lsd["mode"] == "active", "이중 궤도 모델의 LSD 는 u_diff (active) 만"
                 self.p.lsd_mode = "active"
@@ -290,7 +292,14 @@ class World:
 
 
 def calibrated_world(**kw):
-    """보정값(calibration.json: mu_scale, k_roll)과 지연(delays.json)을 넣은 World. kw 로 덮어쓸 수 있음."""
+    """보정값(calibration.json: mu_scale, k_roll)과 지연(delays.json)을 넣은 World. kw 로 덮어쓸 수 있음.
+    model='dt' 이면 calibration_dt.json 의 마찰 배율만 쓴다 (다물체 보정값은 쓰지 않음)."""
+    if kw.get("model") == "dt":
+        cal = load_calibration(CALIB_DT)
+        base = dict(mu_scale=cal.get("mu_scale", 1.0), delays=load_delays())
+        if "delays" in kw and kw["delays"] is not None and base["delays"]:
+            kw["delays"] = dict(base["delays"], **kw["delays"])
+        return World(**dict(base, **kw))
     cal = load_calibration()
     base = dict(mu_scale=cal.get("mu_scale", 1.0), k_roll=cal.get("k_roll"), delays=load_delays(), tire_mirror=cal.get("tire_mirror", True),
                 **{k: cal[k] for k in ("ky_f", "ky_r", "rby_f") if k in cal})
