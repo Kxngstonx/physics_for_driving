@@ -237,3 +237,60 @@ def test_model_data_sim_read_the_same_specs():
     df = D.read_raw("2023-11_9")
     assert np.allclose(df["Fxf"], v("drive_eff") * df["F_drive"] - df["F_brake_f"])
     assert np.allclose(df["F_drive"], D.drive_force(df, v("gear_ratios"), v("wheel_radius"))[0])
+
+
+def test_b_reward_speed_limit_and_braking_feasible_speed():
+    """[11/23] B 보상 ablation ①②: 원 (반지름 50 m) 의 한계 속도 = √(ay·R), 제동 가능 속도 = min √(v_j² + 2·a·d_j)."""
+    from types import SimpleNamespace
+    n, ay = 314, 10.0  # 닫힌 원: 1 m 간격 314 점 → 반지름 n/(2π)
+    R = n / (2 * np.pi)
+    fake = SimpleNamespace(np=dict(psi=((2 * np.pi * np.arange(n) / n) + np.pi) % (2 * np.pi) - np.pi))
+    v = mppi.speed_limit(fake, ay)
+    assert np.allclose(v, math.sqrt(ay * R), rtol=1e-3), (v.min(), v.max())
+    vl = np.full(500, 40.0)
+    vl[100] = 15.0
+    vf = mppi.feasible_speed(vl, 5.0, ahead=200)
+    assert abs(vf[0] - math.sqrt(15.0 ** 2 + 2 * 5.0 * 100)) < 1e-9 and vf[100] == 15.0 and vf[101] == 40.0
+    assert abs(vf[499] - min(40.0, math.sqrt(15.0 ** 2 + 2 * 5.0 * 101))) < 1e-9  # 고리: 끝에서 처음 코너를 봄
+
+
+def test_b_reward_terms_zero_when_not_violated_and_positive_when_violated():
+    """[11/23] ①~④ 는 조건을 어길 때만 비용이 생긴다. ② 는 계획 마지막 스텝에서만."""
+    tr = mppi.Track(TRACK)
+    cfg = dict(ay_max=10.66, a_brk=4.83, beta_max=0.076)
+    ix = torch.tensor([0, 0], device=mppi.DEV)
+    half = torch.tensor([5.0, 5.0], device=mppi.DEV)
+    for kind in mppi.B_REWARDS:
+        m = mppi.MPPI(_Toy(), tr, K=8, N=5, mode="B", use_graph=False, rew=dict(kind=kind, **cfg))
+        if kind in ("vlim", "term"):
+            vl = float(m.vlim[0])
+            s = torch.tensor([[vl - 1.0, 0.0, 0.0], [vl + 2.0, 0.0, 0.0]], device=mppi.DEV)
+            ey = torch.zeros(2, device=mppi.DEV)
+        elif kind == "slip":
+            s = torch.tensor([[20.0, 0.0, 0.0], [20.0, -4.0, 0.0]], device=mppi.DEV)
+            ey = torch.zeros(2, device=mppi.DEV)
+        else:
+            s = torch.tensor([[20.0, 0.0, 0.0], [20.0, 0.0, 0.0]], device=mppi.DEV)
+            ey = torch.tensor([0.0, -(5.0 - m.off_margin)], device=mppi.DEV)  # 가운데 / 이탈 벌점선
+        c = m._extra(s, ey, half, ix, last=True)
+        assert float(c[0]) == 0.0 and float(c[1]) > 0.0, (kind, c)
+        if kind == "term":
+            assert float(m._extra(s, ey, half, ix, last=False).abs().sum()) == 0.0
+        if kind == "wall":
+            assert abs(float(c[1]) - mppi.W_WALL) < 1e-3
+        if kind == "vlim":
+            assert abs(float(c[1]) - mppi.W_PROG_M * 4.0) < 1e-2
+
+
+def test_b_reward_off_by_default_keeps_cost():
+    """[11/23] rew 없음(기본) = 기존 B 와 같은 비용. 미끄럼이 없는 가짜 모델이면 slip 항을 켜도 비용이 같다."""
+    tr = mppi.Track(TRACK)
+    costs = []
+    for rew in (None, dict(kind="slip", beta_max=0.076)):
+        m = mppi.MPPI(_Toy(), tr, K=64, N=8, seed=0, mode="B", use_graph=False, rew=rew)
+        m.s_now = torch.tensor([20.0, 0.0, 0.0], device=mppi.DEV)
+        pose = torch.tensor([float(tr.x[0]), float(tr.y[0]), float(tr.psi[0])], device=mppi.DEV)
+        hist = torch.tensor([20.0, 0.0, 0.0, 300.0, 0.0, 0.0], device=mppi.DEV).repeat(mppi.H - 1, 1)
+        m.act(hist, pose, 0, torch.tensor([300.0, 0.0], device=mppi.DEV))
+        costs.append(m.bcost.clone())
+    assert torch.equal(costs[0], costs[1])
