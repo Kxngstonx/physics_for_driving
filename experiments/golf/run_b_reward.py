@@ -1,6 +1,7 @@
 """B 방식 보상 ablation (11/23 사용자 결정, docs/experiment_plan_golf.md [결정 11/21] 10).
 
   python experiments/golf/run_b_reward.py run 25        # 보상 후보 4개 × R1–R6 (시드 0), 계획 길이 N 스텝
+  python experiments/golf/run_b_reward.py run 200 vlim  # [11/24] 후보 일부만 (8초 + ①)
   python experiments/golf/run_b_reward.py report        # → results/b_reward.md
 
 바꾸는 것: 기본 B 보상에 항목 하나 (mppi.B_REWARDS)
@@ -53,7 +54,7 @@ def save(d):
     os.replace(tmp, OUT)
 
 
-def run(N):
+def run(N, kinds=mppi.B_REWARDS):
     import torch
     import tune_mppi as T
     from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG, cfg_of_model
@@ -66,7 +67,7 @@ def run(N):
     print("문턱", th, flush=True)
     c = json.load(open(os.path.join(RES, "mppi_tune.json")))["chosen"][f"B_{N}"]
     tr, grade, info = T.b_track()
-    for kind in mppi.B_REWARDS:
+    for kind in kinds:
         for R in RUNGS:
             d = load()
             if any(r["kind"] == kind and r["N"] == N and r["rung"] == R for r in d["runs"]):
@@ -116,4 +117,4 @@ def report():
 
 
 if __name__ == "__main__":
-    {"run": lambda: run(int(sys.argv[2])), "report": report}[sys.argv[1]]()
+    {"run": lambda: run(int(sys.argv[2]), tuple(sys.argv[3:]) or mppi.B_REWARDS), "report": report}[sys.argv[1]]()
