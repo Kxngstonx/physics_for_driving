@@ -33,7 +33,7 @@ HORIZONS = {"1s": 25, "2s": 50}
 
 
 def load_json():
-    return json.load(open(JS)) if os.path.exists(JS) else {}
+    return json.load(open(JS, encoding="utf-8")) if os.path.exists(JS) else {}
 
 
 def save_json(d):
@@ -129,7 +129,7 @@ def stage_replay(res):
 def lap_info(run=None):
     """run=None: 트랙 기준선을 만든 가장 빠른 랩 (2023-10_8, 검증용). run 을 주면 그 파일에서 가장 빠른 완전한 랩."""
     if run is None:
-        return json.load(open(TRACK.replace("_recorded.npz", "_info.json")))["best_lap"]
+        return json.load(open(TRACK.replace("_recorded.npz", "_info.json"), encoding="utf-8"))["best_lap"]
     from deep_dynamics.golf.track import best_lap
     b = best_lap([run])
     return dict(run=run, v_mean=b["v_mean"], lap_time=b["lap_time"], t0=b["t0"])
@@ -154,7 +154,10 @@ def recorded_track(info=None):
     n = len(tr.np["x"])
     idx = project(np.c_[tr.np["x"], tr.np["y"]], np.c_[px, py])[0]
     frac = np.linspace(0.0, 1.0, len(idx))
-    keep = ~(((frac < 0.5) & (idx > n / 2)) | ((frac >= 0.5) & (idx < n / 2)))
+    # [11/25] 절반은 트랙 번호(0 기준)가 아니라 실제 출발 위치에서 잰 거리로 나눈다. 출발이 이음매 직전(2023-10_5 는 2614/2620,
+    # 10_8 은 2602/2620)이면 이전 기준은 출발 지점 몇 m 를 랩 끝(32 m/s) 표본으로 채워 정지 출발이 '달리며 출발'이 됐다
+    s = (idx - idx[0]) % n
+    keep = ~(((frac < 0.5) & (s > n / 2)) | ((frac >= 0.5) & (s < n / 2)))
     cnt = np.bincount(idx[keep], minlength=n)
     has = cnt > 0
     pos = np.arange(n)
@@ -178,12 +181,18 @@ FREE = dict(look_t=0.8, look_min=6.0, look_max=30.0, k_ey=0.02, ki_ey=0.01, kp_v
 def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
     """tr: mppi.Track (vref = 목표 속도, 1 m 간격). world: sim.World (reset·set_pos·step·pose).
     트랙 위치 i0 에서 vref[i0] 속도로 시작해 한 바퀴 (정지 출발이면 vref[i0] ≈ 0.5~1 m/s)."""
+    from deep_dynamics.golf import mppi
     P = np.c_[tr.np["x"], tr.np["y"]]
     psi_t, vref, n = tr.np["psi"], tr.vref.detach().cpu().numpy().astype(float), len(P)
     wl, wr = tr.np["width_l"], tr.np["width_r"]
-    p, spec = world.p, json.load(open(sim.SPECS))["GOLF"]["final"]
+    p = world.p
+    if hasattr(world, "lin_stiffness"):  # [11/25] P2 세계: 세계 자신의 선형 강성
+        Cf_lin, Cr_lin = world.lin_stiffness()
+    else:
+        spec = json.load(open(sim.SPECS))["GOLF"]["final"]
+        Cf_lin, Cr_lin = spec["Cf_lin"], spec["Cr_lin"]
     L = p.a + p.b
-    K_us = p.m / L * (p.b / spec["Cf_lin"] - p.a / spec["Cr_lin"])
+    K_us = p.m / L * (p.b / Cf_lin - p.a / Cr_lin)
     g = gains
     world.reset(P[i0, 0], P[i0, 1], float(psi_t[i0]), max(float(vref[i0]), 0.5), F0=0.0)
     i, prog, last, delta, ie_y, ie_v = i0, 0, i0, 0.0, 0.0, 0.0
@@ -203,7 +212,7 @@ def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
         if d < n / 2:
             prog += d
         last = i
-        if abs(ey) > (wl[i] if ey > 0 else wr[i]) + 2.0:
+        if abs(ey) > (wl[i] if ey > 0 else wr[i]) + mppi.OFF_TRACK_M:  # [11/19 팀 결정] 차 반폭 0.9 m (이전 2.0)
             status = "off_track"
             break
         armed = armed or vx >= v_armed
@@ -241,6 +250,18 @@ def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
                 v_err_rms=float(np.sqrt(np.mean(ev_a ** 2))))
 
 
+WORLD = "cr"  # [11/25] 세계: "cr" = CommonRoad(sim.calibrated_world), "p2" = P2 자전거(p2.P2World.from_fit). 명령줄 두 번째 인자
+
+
+def make_world(**kw):
+    if WORLD == "p2":
+        from deep_dynamics.golf import p2
+        d = dict(p2.DEFAULT_DELAYS if sim.load_delays() is None else sim.load_delays())
+        d.update(kw.pop("delays", None) or {})
+        return p2.P2World.from_fit(delays=d, **kw)
+    return sim.calibrated_world(**kw)
+
+
 TUNE_LAP_RUN = "2023-10_5"  # 운전자 설정을 고르는 랩: 두 번째로 빠른 실제 랩 (108.2 s). 검증 랩(2023-10_8)과 다른 파일
 FREE_GRID = dict(prev_t=(0.1, 0.2, 0.3), kp_v=(0.5, 1.0, 2.0))
 
@@ -255,7 +276,7 @@ def stage_closed_free(res):
     for pt in FREE_GRID["prev_t"]:
         for kp in FREE_GRID["kp_v"]:
             gains = dict(FREE, prev_t=pt, kp_v=kp)
-            r = drive_free(sim.calibrated_world(grade_by_idx=grade_t), tr_t, gains=gains, i0=info_t["start_idx"])
+            r = drive_free(make_world(grade_by_idx=grade_t), tr_t, gains=gains, i0=info_t["start_idx"])
             r = dict(prev_t=pt, kp_v=kp, **r, rel_err=((r["lap_time"] - info_t["lap_time"]) / info_t["lap_time"]) if r["finished"] else None)
             grid.append(r)
             print("tune", json.dumps(r, ensure_ascii=False), flush=True)
@@ -265,14 +286,14 @@ def stage_closed_free(res):
     lap_rec = info["lap_time"]
     rows = []
     for sd in STEER_DELAYS:
-        w = sim.calibrated_world(delays=dict(steer=sd), grade_by_idx=grade)
+        w = make_world(delays=dict(steer=sd), grade_by_idx=grade)
         r = drive_free(w, tr, gains=gains, i0=info["start_idx"])
         r = dict(steer_delay=sd, **r, rel_err=((r["lap_time"] - lap_rec) / lap_rec) if r["finished"] else None)
         rows.append(r)
         print(json.dumps(r, ensure_ascii=False), flush=True)
     fin = [r for r in rows if r["finished"]]
     pick = min(fin, key=lambda r: abs(r["rel_err"])) if fin else None
-    res["closed_free"] = dict(mu=sim.load_calibration()["mu_scale"], lap_record=lap_rec, gains=gains, runs=rows,
+    res["closed_free" + ("" if WORLD == "cr" else f"_{WORLD}")] = dict(world=WORLD, mu=sim.load_calibration().get("mu_scale"), lap_record=lap_rec, gains=gains, runs=rows,
                               tune_lap=dict(info_t, grid=grid),
                               steer_delay=pick["steer_delay"] if pick else None,
                               passed=bool(pick and abs(pick["rel_err"]) <= 0.02))
@@ -395,6 +416,7 @@ def stage_report(res):
 
 if __name__ == "__main__":
     stage = sys.argv[1]
+    WORLD = sys.argv[2] if len(sys.argv) > 2 else "cr"
     res = load_json()
     {"mu": stage_mu, "replay": stage_replay, "closed": stage_closed, "closed_tuned": stage_closed_tuned, "closed_free": stage_closed_free,
      "report": stage_report}[stage](res)
