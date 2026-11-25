@@ -310,7 +310,12 @@ RUNG_KO = dict(R1="순수 물리", R2="물리+잔차", R3="신경망 타이어",
 
 
 def build(rung, cfg, norm=None, device="cpu"):
-    return RUNGS[rung](cfg, norm if norm is not None else Norm(nf=cfg.nf)).to(device)
+    if rung not in RUNGS:  # [11/25] 새 모델 N1·N2 (hybrid.py). R1–R6 은 그대로
+        from .hybrid import MODELS
+        cls = MODELS[rung]
+    else:
+        cls = RUNGS[rung]
+    return cls(cfg, norm if norm is not None else Norm(nf=cfg.nf)).to(device)
 
 
 def save_model(model, rung, path):

@@ -97,7 +97,7 @@ def main():
     a = ap.parse_args()
     cfg = ALL[a.cfg]
     sp = D.get_split()
-    paths = sorted(glob.glob(os.path.join(a.models, f"R?_s?_{a.tag}.pt")))
+    paths = sorted(glob.glob(os.path.join(a.models, f"[RN]?_s?_{a.tag}.pt")))
     models = {os.path.basename(p)[:-3]: load_model(p, cfg, DEV) for p in paths}
     out = dict(tag=a.tag, test=sp["test"], openloop={}, n_starts={})
     L = [f"# 개루프 평가: 모델 {a.tag} (시험 파일 {', '.join(sp['test'])})", ""]

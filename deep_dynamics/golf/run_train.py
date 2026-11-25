@@ -44,6 +44,6 @@ save_model(model, a.rung, os.path.join(a.out, tag + ".pt"))
 info = dict(tag=tag, rung=a.rung, seed=a.seed, roll=a.roll, vmin=a.vmin, max_epochs=a.max_epochs, lr=a.lr, cfg=cfg.name,
             n_train=len(tr[0]), n_val=len(va[0]), **rec)
 if hasattr(model, "g"):
-    info["global_coeffs"] = dict(zip(cfg.pnames, model.g.values().detach().cpu().tolist()))
+    info["global_coeffs"] = dict(zip(getattr(model.g, "names", cfg.pnames), model.g.values().detach().cpu().tolist()))  # [11/25] N 모델은 자기 계수 이름
 json.dump(info, open(os.path.join(a.out, tag + ".json"), "w"), indent=1)
 print("done", tag, f"best val {rec['best_val']:.4f}@{rec['best_epoch']} stop {rec['stop_epoch']} ({rec['stop_reason']}) {rec['sec']:.0f}s")
