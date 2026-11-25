@@ -1,0 +1,50 @@
+[
+ {
+  "sim": "commonroad",
+  "rung": "R1",
+  "steer_delay": 0.0,
+  "status": "off_track",
+  "finished": false,
+  "progress_m": 566.0,
+  "lap_time": null,
+  "ey_mean": 1.1600248945846168,
+  "ey_max": 8.641884803771973,
+  "v_err_mean": 1.6725545678256957
+ },
+ {
+  "sim": "commonroad",
+  "rung": "R6",
+  "steer_delay": 0.0,
+  "status": "off_track",
+  "finished": false,
+  "progress_m": 494.0,
+  "lap_time": null,
+  "ey_mean": 0.5011166226617157,
+  "ey_max": 2.335232973098755,
+  "v_err_mean": 1.7367664532598102
+ },
+ {
+  "sim": "commonroad",
+  "rung": "R1",
+  "steer_delay": 0.08,
+  "status": "stalled",
+  "finished": false,
+  "progress_m": 563.0,
+  "lap_time": null,
+  "ey_mean": 1.264469825774309,
+  "ey_max": 8.020601272583008,
+  "v_err_mean": 2.098953408756475
+ },
+ {
+  "sim": "commonroad",
+  "rung": "R6",
+  "steer_delay": 0.08,
+  "status": "off_track",
+  "finished": false,
+  "progress_m": 236.0,
+  "lap_time": null,
+  "ey_mean": 1.7536415895295083,
+  "ey_max": 9.523847579956055,
+  "v_err_mean": 3.1852399164316605
+ }
+]

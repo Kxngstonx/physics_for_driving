@@ -1,0 +1,38 @@
+[
+ {
+  "sim": "commonroad",
+  "rung": "R1",
+  "ay_lim": 9.0,
+  "seed": 0,
+  "mu_mult": 1.0,
+  "drive_gain": 1.0,
+  "model_seed": 2,
+  "plan_time": 106.94329557398079,
+  "status": "finished",
+  "finished": true,
+  "progress_m": 2618.0,
+  "lap_time": 106.52,
+  "ey_mean": 0.40074088279893355,
+  "ey_max": 4.235408306121826,
+  "v_err_mean": 0.6069730714976318,
+  "wall_s": 329.24963212013245
+ },
+ {
+  "sim": "commonroad",
+  "rung": "R6",
+  "ay_lim": 9.0,
+  "seed": 0,
+  "mu_mult": 1.0,
+  "drive_gain": 1.0,
+  "model_seed": 2,
+  "plan_time": 106.94329557398079,
+  "status": "finished",
+  "finished": true,
+  "progress_m": 2618.0,
+  "lap_time": 107.2,
+  "ey_mean": 0.32470049261282297,
+  "ey_max": 3.45812726020813,
+  "v_err_mean": 0.7176548018384336,
+  "wall_s": 369.8851068019867
+ }
+]

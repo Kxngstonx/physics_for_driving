@@ -1,0 +1,5 @@
+19:49:17 start fit
+20:15:07 ok fit
+20:15:26 ok free
+20:16:54 ok run x1.00
+20:20:54 ALL DONE

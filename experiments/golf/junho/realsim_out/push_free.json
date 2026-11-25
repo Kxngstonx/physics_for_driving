@@ -1,0 +1,62 @@
+[
+ {
+  "sim": "realsim",
+  "driver": "model_free",
+  "scale": 1.0,
+  "status": "finished",
+  "finished": true,
+  "progress_frac": 0.999236641221374,
+  "lap_time": 104.72,
+  "ey_mean": 0.44142221659982367,
+  "ey_max": 2.5262111695318916,
+  "progress_m": 2618
+ },
+ {
+  "sim": "realsim",
+  "driver": "model_free",
+  "scale": 1.01,
+  "status": "off_track",
+  "finished": false,
+  "progress_frac": 0.49923664122137407,
+  "lap_time": null,
+  "ey_mean": 1.2467264938727887,
+  "ey_max": 7.721792483332949,
+  "progress_m": 1308
+ },
+ {
+  "sim": "realsim",
+  "driver": "model_free",
+  "scale": 1.02,
+  "status": "off_track",
+  "finished": false,
+  "progress_frac": 0.34122137404580155,
+  "lap_time": null,
+  "ey_mean": 0.9324406586460725,
+  "ey_max": 6.427883236489839,
+  "progress_m": 894
+ },
+ {
+  "sim": "realsim",
+  "driver": "model_free",
+  "scale": 1.03,
+  "status": "off_track",
+  "finished": false,
+  "progress_frac": 0.34122137404580155,
+  "lap_time": null,
+  "ey_mean": 0.9479774394428607,
+  "ey_max": 6.2947182889997375,
+  "progress_m": 894
+ },
+ {
+  "sim": "realsim",
+  "driver": "model_free",
+  "scale": 1.05,
+  "status": "off_track",
+  "finished": false,
+  "progress_frac": 0.34007633587786257,
+  "lap_time": null,
+  "ey_mean": 1.0171256538828977,
+  "ey_max": 6.773653967400148,
+  "progress_m": 891
+ }
+]

@@ -1,0 +1,314 @@
+{
+ "CommonRoad": {
+  "files": [
+   "log_profile_commonroad_R1_ay9.0.npz",
+   "log_profile_commonroad_R1_ay9.0_s1.npz",
+   "log_profile_commonroad_R1_ay9.0_s2.npz",
+   "log_profile_commonroad_R6_ay9.0.npz",
+   "log_profile_commonroad_R6_ay9.0_s1.npz",
+   "log_profile_commonroad_R6_ay9.0_s2.npz"
+  ],
+  "R1": {
+   "all": {
+    "n": 2690,
+    "vx": 0.257,
+    "vy": 0.309,
+    "r": 0.0535,
+    "score": 0.704,
+    "bias_vx": 0.078,
+    "bias_absr": null
+   },
+   "corner": {
+    "n": 180,
+    "vx": 0.105,
+    "vy": 0.179,
+    "r": 0.0397,
+    "score": 0.434,
+    "bias_vx": 0.076,
+    "bias_absr": null
+   },
+   "hi_ay": {
+    "n": 1097,
+    "vx": 0.303,
+    "vy": 0.44,
+    "r": 0.0689,
+    "score": 0.968,
+    "bias_vx": 0.095,
+    "bias_absr": null
+   },
+   "brake": {
+    "n": 501,
+    "vx": 0.132,
+    "vy": 0.366,
+    "r": 0.0828,
+    "score": 0.882,
+    "bias_vx": 0.029,
+    "bias_absr": null
+   },
+   "drive": {
+    "n": 1395,
+    "vx": 0.327,
+    "vy": 0.354,
+    "r": 0.0496,
+    "score": 0.768,
+    "bias_vx": 0.105,
+    "bias_absr": null
+   }
+  },
+  "R6": {
+   "all": {
+    "n": 2690,
+    "vx": 0.376,
+    "vy": 0.248,
+    "r": 0.0539,
+    "score": 0.63,
+    "bias_vx": 0.14,
+    "bias_absr": null
+   },
+   "corner": {
+    "n": 180,
+    "vx": 0.153,
+    "vy": 0.156,
+    "r": 0.0386,
+    "score": 0.403,
+    "bias_vx": 0.001,
+    "bias_absr": null
+   },
+   "hi_ay": {
+    "n": 1097,
+    "vx": 0.457,
+    "vy": 0.323,
+    "r": 0.0716,
+    "score": 0.821,
+    "bias_vx": 0.213,
+    "bias_absr": null
+   },
+   "brake": {
+    "n": 501,
+    "vx": 0.276,
+    "vy": 0.348,
+    "r": 0.0846,
+    "score": 0.881,
+    "bias_vx": 0.141,
+    "bias_absr": null
+   },
+   "drive": {
+    "n": 1395,
+    "vx": 0.461,
+    "vy": 0.229,
+    "r": 0.0475,
+    "score": 0.589,
+    "bias_vx": 0.235,
+    "bias_absr": null
+   }
+  }
+ },
+ "v3(데이터 맞춤)": {
+  "files": [
+   "log_profile_realsim_R1_ay9.0.npz",
+   "log_profile_realsim_R1_ay9.0_s1.npz",
+   "log_profile_realsim_R1_ay9.0_s2.npz",
+   "log_profile_realsim_R6_ay9.0.npz",
+   "log_profile_realsim_R6_ay9.0_s1.npz",
+   "log_profile_realsim_R6_ay9.0_s2.npz"
+  ],
+  "R1": {
+   "all": {
+    "n": 3157,
+    "vx": 0.097,
+    "vy": 0.152,
+    "r": 0.0288,
+    "score": 0.351,
+    "bias_vx": 0.072,
+    "bias_absr": null
+   },
+   "corner": {
+    "n": 198,
+    "vx": 0.085,
+    "vy": 0.052,
+    "r": 0.0201,
+    "score": 0.165,
+    "bias_vx": 0.085,
+    "bias_absr": null
+   },
+   "hi_ay": {
+    "n": 1043,
+    "vx": 0.091,
+    "vy": 0.223,
+    "r": 0.0342,
+    "score": 0.479,
+    "bias_vx": 0.041,
+    "bias_absr": null
+   },
+   "brake": {
+    "n": 555,
+    "vx": 0.13,
+    "vy": 0.162,
+    "r": 0.0343,
+    "score": 0.391,
+    "bias_vx": 0.109,
+    "bias_absr": null
+   },
+   "drive": {
+    "n": 1597,
+    "vx": 0.084,
+    "vy": 0.175,
+    "r": 0.0292,
+    "score": 0.386,
+    "bias_vx": 0.051,
+    "bias_absr": null
+   }
+  },
+  "R6": {
+   "all": {
+    "n": 3157,
+    "vx": 0.224,
+    "vy": 0.15,
+    "r": 0.0347,
+    "score": 0.388,
+    "bias_vx": 0.124,
+    "bias_absr": null
+   },
+   "corner": {
+    "n": 198,
+    "vx": 0.132,
+    "vy": 0.101,
+    "r": 0.0302,
+    "score": 0.284,
+    "bias_vx": -0.016,
+    "bias_absr": null
+   },
+   "hi_ay": {
+    "n": 1043,
+    "vx": 0.209,
+    "vy": 0.167,
+    "r": 0.0452,
+    "score": 0.45,
+    "bias_vx": 0.151,
+    "bias_absr": null
+   },
+   "brake": {
+    "n": 555,
+    "vx": 0.335,
+    "vy": 0.212,
+    "r": 0.0351,
+    "score": 0.5,
+    "bias_vx": 0.239,
+    "bias_absr": null
+   },
+   "drive": {
+    "n": 1597,
+    "vx": 0.205,
+    "vy": 0.109,
+    "r": 0.0349,
+    "score": 0.324,
+    "bias_vx": 0.159,
+    "bias_absr": null
+   }
+  }
+ },
+ "횡가속도 고정판": {
+  "files": [
+   "log_profile_realsim_R1_ay9.0.npz",
+   "log_profile_realsim_R1_ay9.0_s1.npz",
+   "log_profile_realsim_R1_ay9.0_s2.npz",
+   "log_profile_realsim_R6_ay9.0.npz",
+   "log_profile_realsim_R6_ay9.0_s1.npz",
+   "log_profile_realsim_R6_ay9.0_s2.npz"
+  ],
+  "R1": {
+   "all": {
+    "n": 695,
+    "vx": 0.152,
+    "vy": 0.321,
+    "r": 0.0543,
+    "score": 0.711,
+    "bias_vx": 0.065,
+    "bias_absr": null
+   },
+   "corner": {
+    "n": 40,
+    "vx": 0.12,
+    "vy": 0.21,
+    "r": 0.0623,
+    "score": 0.567,
+    "bias_vx": 0.09,
+    "bias_absr": null
+   },
+   "hi_ay": {
+    "n": 260,
+    "vx": 0.167,
+    "vy": 0.442,
+    "r": 0.0549,
+    "score": 0.899,
+    "bias_vx": 0.03,
+    "bias_absr": null
+   },
+   "brake": {
+    "n": 132,
+    "vx": 0.209,
+    "vy": 0.252,
+    "r": 0.0388,
+    "score": 0.557,
+    "bias_vx": 0.159,
+    "bias_absr": null
+   },
+   "drive": {
+    "n": 382,
+    "vx": 0.127,
+    "vy": 0.395,
+    "r": 0.0647,
+    "score": 0.859,
+    "bias_vx": 0.013,
+    "bias_absr": null
+   }
+  },
+  "R6": {
+   "all": {
+    "n": 695,
+    "vx": 0.302,
+    "vy": 0.272,
+    "r": 0.0646,
+    "score": 0.696,
+    "bias_vx": 0.171,
+    "bias_absr": null
+   },
+   "corner": {
+    "n": 40,
+    "vx": 0.166,
+    "vy": 0.198,
+    "r": 0.0726,
+    "score": 0.593,
+    "bias_vx": 0.061,
+    "bias_absr": null
+   },
+   "hi_ay": {
+    "n": 260,
+    "vx": 0.295,
+    "vy": 0.336,
+    "r": 0.0824,
+    "score": 0.857,
+    "bias_vx": 0.185,
+    "bias_absr": null
+   },
+   "brake": {
+    "n": 132,
+    "vx": 0.476,
+    "vy": 0.263,
+    "r": 0.0347,
+    "score": 0.596,
+    "bias_vx": 0.387,
+    "bias_absr": null
+   },
+   "drive": {
+    "n": 382,
+    "vx": 0.234,
+    "vy": 0.241,
+    "r": 0.0711,
+    "score": 0.663,
+    "bias_vx": 0.149,
+    "bias_absr": null
+   }
+  }
+ }
+}

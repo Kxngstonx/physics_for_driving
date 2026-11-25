@@ -1,0 +1,2 @@
+{"sim": "realsim", "rung": "R1", "ay_lim": 9.0, "plan_time": 106.94329557398079, "status": "finished", "finished": true, "progress_m": 2618.0, "lap_time": 106.2, "ey_mean": 0.26975455836948925, "ey_max": 1.0453717708587646, "v_err_mean": 0.5368237888745669, "wall_s": 409.43383502960205}
+{"sim": "realsim", "rung": "R6", "ay_lim": 9.0, "plan_time": 106.94329557398079, "status": "finished", "finished": true, "progress_m": 2618.0, "lap_time": 106.68, "ey_mean": 0.24742534853350218, "ey_max": 1.093793272972107, "v_err_mean": 0.6178841424605174, "wall_s": 418.05841517448425}

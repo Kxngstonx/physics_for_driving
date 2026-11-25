@@ -1,0 +1,1 @@
+{"sim": "dt", "rung": "R1", "steer_delay": 0.0, "status": "off_track", "finished": false, "progress_m": 436.0, "progress_frac": 0.166412213740458, "lap_time": null, "time_s": 18.52, "ey_mean": 1.6679744867750768, "ey_max": 9.50830364227295, "v_err_mean": 1.6108333534092418, "wall_s": 49.46141219139099}

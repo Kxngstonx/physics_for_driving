@@ -1,0 +1,4 @@
+tune 1.0 {"status": "finished", "lap_time": 105.08, "rel_err": -0.028848434332606372, "ey_mean": 0.46165576738518316, "ey_max": 1.9021176943739126}
+tune 1.11 {"status": "stalled", "lap_time": null, "rel_err": null, "ey_mean": 0.7400694315208727, "ey_max": 9.312241018317668}
+val 1.0 {"status": "finished", "lap_time": 105.2, "rel_err": -0.019397546021292712, "ey_mean": 0.4499631323722098, "ey_max": 1.7558239758049958}
+val 1.11 {"status": "finished", "lap_time": 104.84, "rel_err": -0.022753219818178017, "ey_mean": 0.525018700400772, "ey_max": 2.180703858775495}

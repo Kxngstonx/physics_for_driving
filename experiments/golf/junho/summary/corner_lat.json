@@ -1,0 +1,66 @@
+{
+ "CommonRoad 원래 | R1가 몬 궤적 | R1 예측": {
+  "n": 24,
+  "ay_max_pred": 8.11,
+  "ay_max_sim": 8.28,
+  "r_bias": -0.0081,
+  "vy_bias": -0.016,
+  "vx_bias": 0.068
+ },
+ "CommonRoad 원래 | R1가 몬 궤적 | R6 예측": {
+  "n": 24,
+  "ay_max_pred": 8.4,
+  "ay_max_sim": 8.28,
+  "r_bias": 0.004,
+  "vy_bias": 0.172,
+  "vx_bias": -0.133
+ },
+ "CommonRoad 원래 | R6가 몬 궤적 | R1 예측": {
+  "n": 26,
+  "ay_max_pred": 8.87,
+  "ay_max_sim": 9.18,
+  "r_bias": 0.0022,
+  "vy_bias": 0.042,
+  "vx_bias": 0.036
+ },
+ "CommonRoad 원래 | R6가 몬 궤적 | R6 예측": {
+  "n": 26,
+  "ay_max_pred": 9.48,
+  "ay_max_sim": 9.18,
+  "r_bias": 0.0224,
+  "vy_bias": 0.165,
+  "vx_bias": -0.046
+ },
+ "CommonRoad 구동력×1.11 | R1가 몬 궤적 | R1 예측": {
+  "n": 24,
+  "ay_max_pred": 8.19,
+  "ay_max_sim": 8.34,
+  "r_bias": -0.0075,
+  "vy_bias": -0.01,
+  "vx_bias": 0.057
+ },
+ "CommonRoad 구동력×1.11 | R1가 몬 궤적 | R6 예측": {
+  "n": 24,
+  "ay_max_pred": 8.47,
+  "ay_max_sim": 8.34,
+  "r_bias": 0.0045,
+  "vy_bias": 0.172,
+  "vx_bias": -0.138
+ },
+ "CommonRoad 구동력×1.11 | R6가 몬 궤적 | R1 예측": {
+  "n": 6,
+  "ay_max_pred": 6.04,
+  "ay_max_sim": 6.19,
+  "r_bias": -0.0072,
+  "vy_bias": -0.082,
+  "vx_bias": -0.236
+ },
+ "CommonRoad 구동력×1.11 | R6가 몬 궤적 | R6 예측": {
+  "n": 6,
+  "ay_max_pred": 6.42,
+  "ay_max_sim": 6.19,
+  "r_bias": 0.0117,
+  "vy_bias": 0.214,
+  "vx_bias": -0.427
+ }
+}

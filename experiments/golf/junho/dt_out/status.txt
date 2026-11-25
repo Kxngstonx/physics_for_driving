@@ -1,0 +1,2 @@
+10:11:04 ok fit {"model":"dt","mu_scale":1.145,"mu_dfz":-0.25,"c2":1.3065,"fit":"experiments/golf/results/sim/fit_dt.json(Windows인코딩오류로저장실패,값은dt_out/fit_dt.log의최적값)","ay_target":10.656687425783655,"max_ay":10.65377354835295,"mu_note":"dt_calib_mu.py:calibrate_dt절차,맞춘타이어모양,조향램프0.6rad"}
+10:11:32 ok free

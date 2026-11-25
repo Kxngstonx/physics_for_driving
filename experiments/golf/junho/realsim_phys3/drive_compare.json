@@ -1,0 +1,233 @@
+{
+ "free": {
+  "lap_record": 107.2809879,
+  "gains": {
+   "look_t": 0.8,
+   "look_min": 6.0,
+   "look_max": 30.0,
+   "k_ey": 0.02,
+   "ki_ey": 0.01,
+   "kp_v": 0.5,
+   "ki_v": 0.1,
+   "prev_t": 0.3,
+   "d_max": 0.3,
+   "dd_max": 0.02
+  },
+  "grid": [
+   {
+    "prev_t": 0.1,
+    "kp_v": 0.5,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999236641221374,
+    "lap_time": 105.36,
+    "ey_mean": 0.6714157045142393,
+    "ey_max": 3.6116808643783216,
+    "v_err_mean": 1.0515547360758064,
+    "v_err_rms": 2.649751994361905,
+    "rel_err": -0.02626066845530459
+   },
+   {
+    "prev_t": 0.1,
+    "kp_v": 1.0,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999236641221374,
+    "lap_time": 105.08,
+    "ey_mean": 0.6268022913767346,
+    "ey_max": 2.6308427572678537,
+    "v_err_mean": 0.6780836170722632,
+    "v_err_rms": 2.005619765064097,
+    "rel_err": -0.028848434332606372
+   },
+   {
+    "prev_t": 0.1,
+    "kp_v": 2.0,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999236641221374,
+    "lap_time": 104.8,
+    "ey_mean": 0.6581753390788402,
+    "ey_max": 2.6387339027979806,
+    "v_err_mean": 0.5402785289216792,
+    "v_err_rms": 1.9442706484312706,
+    "rel_err": -0.03143620020990816
+   },
+   {
+    "prev_t": 0.2,
+    "kp_v": 0.5,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999618320610687,
+    "lap_time": 105.4,
+    "ey_mean": 0.6582737246700598,
+    "ey_max": 3.3057334497022124,
+    "v_err_mean": 1.0856984972671517,
+    "v_err_rms": 2.6497607258198896,
+    "rel_err": -0.025890987615689993
+   },
+   {
+    "prev_t": 0.2,
+    "kp_v": 1.0,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999236641221374,
+    "lap_time": 105.16,
+    "ey_mean": 0.6280805622266205,
+    "ey_max": 2.5801457094533173,
+    "v_err_mean": 0.763712461542702,
+    "v_err_rms": 2.0030310615545166,
+    "rel_err": -0.028109072653377313
+   },
+   {
+    "prev_t": 0.2,
+    "kp_v": 2.0,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999236641221374,
+    "lap_time": 104.84,
+    "ey_mean": 0.6608254768626477,
+    "ey_max": 2.628294936023315,
+    "v_err_mean": 0.6455309341201579,
+    "v_err_rms": 1.9352178756426397,
+    "rel_err": -0.03106651937029356
+   },
+   {
+    "prev_t": 0.3,
+    "kp_v": 0.5,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999618320610687,
+    "lap_time": 105.64,
+    "ey_mean": 0.6779270876259561,
+    "ey_max": 3.4892502475117753,
+    "v_err_mean": 1.1846616460574888,
+    "v_err_rms": 2.7137305811026673,
+    "rel_err": -0.023672902578002808
+   },
+   {
+    "prev_t": 0.3,
+    "kp_v": 1.0,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999618320610687,
+    "lap_time": 105.24000000000001,
+    "ey_mean": 0.6330634422973019,
+    "ey_max": 2.5535238278537746,
+    "v_err_mean": 0.8653377290229891,
+    "v_err_rms": 2.050156382769457,
+    "rel_err": -0.02736971097414812
+   },
+   {
+    "prev_t": 0.3,
+    "kp_v": 2.0,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999236641221374,
+    "lap_time": 104.88,
+    "ey_mean": 0.6657885710202941,
+    "ey_max": 2.627651226000291,
+    "v_err_mean": 0.7585499177120967,
+    "v_err_rms": 1.9787311808311476,
+    "rel_err": -0.030696838530679095
+   }
+  ],
+  "runs": [
+   {
+    "steer_delay": 0.0,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999236641221374,
+    "lap_time": 105.64,
+    "ey_mean": 0.6094332024148411,
+    "ey_max": 2.5814835315887357,
+    "v_err_mean": 1.0212350205405436,
+    "v_err_rms": 2.0103454566500707,
+    "rel_err": -0.015296166936210689
+   },
+   {
+    "steer_delay": 0.04,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999236641221374,
+    "lap_time": 105.72,
+    "ey_mean": 0.6192502560660814,
+    "ey_max": 2.557087399706396,
+    "v_err_mean": 1.0298882182529052,
+    "v_err_rms": 2.0183006644914117,
+    "rel_err": -0.01455046164801397
+   },
+   {
+    "steer_delay": 0.08,
+    "status": "finished",
+    "finished": true,
+    "progress_frac": 0.999618320610687,
+    "lap_time": 105.92,
+    "ey_mean": 0.6603412547731105,
+    "ey_max": 2.620693878927033,
+    "v_err_mean": 1.05427747389159,
+    "v_err_rms": 2.0407131394242337,
+    "rel_err": -0.012686198427522104
+   },
+   {
+    "steer_delay": 0.12,
+    "status": "off_track",
+    "finished": false,
+    "progress_frac": 0.6767175572519084,
+    "lap_time": null,
+    "ey_mean": 1.2919692897944015,
+    "ey_max": 6.093046918020179,
+    "v_err_mean": 1.490527245824815,
+    "v_err_rms": 2.6838017686755364,
+    "rel_err": null
+   }
+  ],
+  "steer_delay": 0.08,
+  "passed": true
+ },
+ "runs": [
+  {
+   "sim": "realsim",
+   "rung": "R1",
+   "steer_delay": 0.08,
+   "status": "off_track",
+   "finished": false,
+   "progress_m": 186.0,
+   "progress_frac": 0.07099236641221374,
+   "lap_time": null,
+   "time_s": 7.44,
+   "ey_mean": 0.9395831403552845,
+   "ey_max": 6.304594993591309,
+   "v_err_mean": 3.5760632689281175,
+   "wall_s": 26.55599308013916
+  },
+  {
+   "sim": "realsim",
+   "rung": "R6",
+   "steer_delay": 0.08,
+   "status": "off_track",
+   "finished": false,
+   "progress_m": 870.0,
+   "progress_frac": 0.3320610687022901,
+   "lap_time": null,
+   "time_s": 34.36,
+   "ey_mean": 2.1299425158877363,
+   "ey_max": 8.837620735168457,
+   "v_err_mean": 1.5582803453083505,
+   "wall_s": 103.91918110847473
+  }
+ ],
+ "setup": {
+  "track_lap": "2023-10_5",
+  "lap_record": 108.2014422,
+  "start_idx": 2614,
+  "lam": 0.3,
+  "noise": 0.5,
+  "K": 1024,
+  "N": 25,
+  "off_track_m": 0.9,
+  "steer_delay": {
+   "realsim": 0.08
+  }
+ }
+}
