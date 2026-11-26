@@ -51,6 +51,7 @@ class P2Params:
     ds: float = 0.3                  # 측정 vy 위치 (무게중심 앞) [m]
     brake_front: float = CFG.brake_front_share   # 제동 중 앞바퀴 몫 (0.75)
     drive_front: float = 1.0         # 앞바퀴굴림
+    p1: bool = False                 # [11/26] True = P1: 앞뒤 하중 이동·마찰원 끔 (deep_dynamics/golf/p1.py). h 는 안 씀
 
     @property
     def b(self):
@@ -77,14 +78,19 @@ def derivatives(x, delta, fx, p, grade=None):
     b = L - a
     fxf = torch.where(fx > 0, p.drive_front * fx, p.brake_front * fx)
     fxr = fx - fxf
-    ax = fx / m                                          # 하중 이동 (앞뒤)
-    fzf = torch.clamp(m * G * b / L - p.h * m * ax / L, min=0.05 * m * G)
-    fzr = torch.clamp(m * G * a / L + p.h * m * ax / L, min=0.05 * m * G)
     uxs = torch.clamp(ux, min=1.0)
     alpha_f = torch.atan((uy + a * r) / uxs) - delta
     alpha_r = torch.atan((uy - b * r) / uxs)
-    fxf, muf = _derate(fxf, fzf, p.mu)                   # 결합 슬립
-    fxr, mur = _derate(fxr, fzr, p.mu)
+    if getattr(p, "p1", False):                          # P1: 정지 하중 고정, 옆 마찰 μ 그대로 (마찰원 없음)
+        fzf = (m * G * b / L) * torch.ones_like(ux)
+        fzr = (m * G * a / L) * torch.ones_like(ux)
+        muf = mur = p.mu
+    else:
+        ax = fx / m                                      # 하중 이동 (앞뒤)
+        fzf = torch.clamp(m * G * b / L - p.h * m * ax / L, min=0.05 * m * G)
+        fzr = torch.clamp(m * G * a / L + p.h * m * ax / L, min=0.05 * m * G)
+        fxf, muf = _derate(fxf, fzf, p.mu)               # 결합 슬립
+        fxr, mur = _derate(fxr, fzr, p.mu)
     fyf = _pacejka(alpha_f, fzf, muf, p.cf, p.Cf)
     fyr = _pacejka(alpha_r, fzr, mur, p.cr, p.Cr)
     cd, sd = torch.cos(delta), torch.sin(delta)

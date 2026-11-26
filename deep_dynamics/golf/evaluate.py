@@ -73,8 +73,8 @@ def openloop_table(res, title):
          "| 모델 | " + " | ".join(f"{h} vx / vy / r" for h in res["B0_persist"]) + " |", "|---|" + "---|" * len(res["B0_persist"])]
     groups = {"B0_persist": ["B0_persist"], "B1_linear": ["B1_linear"]}
     for k in res:
-        if k.startswith("R"):
-            groups.setdefault(k[:2], []).append(k)
+        if k[0] in "RNE":  # [11/25] N (새 모델)·E (시드 앙상블) 도 표에 넣음
+            groups.setdefault(k.split("_s")[0], []).append(k)
     for g, mem in groups.items():
         name = {"B0_persist": "기준선: 현재값 유지", "B1_linear": "기준선: 직선 외삽"}.get(g, f"{g} {RUNG_KO.get(g, '')} (시드 {len(mem)}개)")
         cells = []
@@ -128,9 +128,17 @@ def main():
                          for i, n in enumerate(cfg.pnames)}
         if hasattr(m, "g"):
             v = m.g.values().detach().cpu().numpy()
-            coef[tag] = {n: dict(value=float(v[i]), lo=cfg.phys[i][2], hi=cfg.phys[i][3],
-                                 at_bound=bool(near(v[i], *cfg.phys[i][2:4], 0.01)))
-                         for i, n in enumerate(cfg.pnames)}
+            if hasattr(m.g, "names"):  # [11/25] N 모델 (hybrid.P2Phys): 자기 계수 이름·범위
+                names = m.g.names
+                los = m.g.lo.cpu().numpy()
+                his = (m.g.lo + m.g.rng).cpu().numpy()
+            else:
+                names = cfg.pnames
+                los = [p[2] for p in cfg.phys]
+                his = [p[3] for p in cfg.phys]
+            coef[tag] = {n: dict(value=float(v[i]), lo=float(los[i]), hi=float(his[i]),
+                                 at_bound=bool(near(v[i], los[i], his[i], 0.01)))
+                         for i, n in enumerate(names)}
         info = json.load(open(os.path.join(a.models, tag + ".json")))
         training[tag] = {k: info[k] for k in ("sec", "best_epoch", "ref_epoch", "stop_epoch", "stop_reason")}
         curves[tag] = dict(hist=info["hist"], **training[tag])

@@ -60,3 +60,20 @@ def test_save_load_and_grade_effect():
     flat[:, -1, 6] = 0.0
     with torch.no_grad():
         assert (m2(up)[:, 0] < m2(flat)[:, 0]).all()                    # 오르막이면 vx 가 덜 늘어남
+
+
+def test_n5_starts_as_n1_and_ensemble():
+    torch.manual_seed(1)
+    hist = torch.randn(16, CFG.hist, CFG.nf)
+    hist[..., 0] = hist[..., 0].abs() * 5 + 15
+    hist[..., 3] *= 2000
+    hist[..., 4] *= 0.03
+    hist[..., 5] = 0.0
+    hist[..., 6] *= 0.02
+    n1, n5 = ladder.build("N1", CFG), ladder.build("N5", CFG)
+    assert torch.allclose(n1(hist), n5(hist), atol=1e-6)
+    n5(hist).pow(2).sum().backward()
+    assert n5.net[-1].weight.grad.abs().sum() > 0 and n5.g.raw.grad.abs().sum() > 0
+    e = hybrid.Ensemble([n1, n5])
+    with torch.no_grad():
+        assert torch.allclose(e(hist), (n1(hist) + n5(hist)) / 2)

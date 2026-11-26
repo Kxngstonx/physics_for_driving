@@ -119,5 +119,38 @@ class N2(Base):
         return p2_step(self.cfg, self.g.P(), hist[:, -1, :3], hist[:, -1, 3:], extra=extra)
 
 
-MODELS = dict(N1=N1, N2=N2)
-MODEL_KO = dict(N1="P2 물리", N2="P2 + 힘 보정")
+class N5(Base):
+    """R5 + P2 물리. R5 크기 MLP [128, 128] 가 (이력 8스텝, 물리가 예측한 변화량) 을 보고 물리 예측에 보정 변화량을 더함.
+    R5: 다음 = 현재 + MLP(이력)·dsd. N5: 다음 = P2(현재) + MLP(이력, (P2 − 현재)/dsd)·dsd. 시작은 N1 과 같음 (마지막 층 0).
+    물리 예측을 입력에도 넣어, 신경망이 물리가 틀리는 상황(물리 예측 자체)을 보고 고칠 수 있게 함."""
+
+    def __init__(self, cfg, norm):
+        super().__init__(cfg, norm)
+        self.g = P2Phys()
+        self.net = mlp(cfg.nf * cfg.hist + 3, [128, 128], 3)
+        nn.init.zeros_(self.net[-1].weight)
+
+    def forward(self, hist):
+        s = hist[:, -1, :3]
+        base = p2_step(self.cfg, self.g.P(), s, hist[:, -1, 3:])
+        feat = torch.cat([self.norm.x(hist), (base - s) / self.norm.dsd], 1)
+        return base + self.net(feat) * self.norm.dsd
+
+
+class Ensemble(nn.Module):
+    """[11/25 N4] 같은 모델의 시드 여러 개 평균. 매 스텝 평균을 다음 스텝 입력으로 씀 (MPPI 에서 쓰는 방식과 같음).
+    hist (B, H, nf) → 다음 [vx, vy, r]. cfg·uses_hist 는 첫 모델 것을 따름."""
+
+    def __init__(self, models):
+        super().__init__()
+        self.ms = nn.ModuleList(models)
+        self.cfg = models[0].cfg
+        self.norm = models[0].norm
+        self.uses_hist = any(getattr(m, "uses_hist", True) for m in models)
+
+    def forward(self, hist):
+        return torch.stack([m(hist) for m in self.ms], 0).mean(0)
+
+
+MODELS = dict(N1=N1, N2=N2, N5=N5)
+MODEL_KO = dict(N1="P2 물리", N2="P2 + 힘 보정", N5="R5 + P2 물리")

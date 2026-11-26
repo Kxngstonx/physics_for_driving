@@ -2,6 +2,7 @@
 
   python experiments/golf/fit_p2.py                  # → experiments/golf/results/sim/p2_fit.json, 화면에 시험 결과
   python experiments/golf/fit_p2.py --eval-only      # 저장된 값으로 시험만
+  python experiments/golf/fit_p2.py --model p1       # [11/26] P1 (하중 이동·마찰원 끔, h 안 맞춤) → results/sim/p1_fit.json
 
 팀 기준 (11/19 결정)
   - 분할: deep_dynamics/data/golf/split.json (학습으로 맞추고, 검증으로 가장 좋은 상태를 고르고, 시험으로 보고)
@@ -25,7 +26,7 @@ import torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, REPO)
 from deep_dynamics.golf import data as D  # noqa: E402
-from deep_dynamics.golf import p2  # noqa: E402
+from deep_dynamics.golf import p1, p2  # noqa: E402
 
 DT = 0.01
 # 이름: (초기값, 하한, 상한). 초기값은 우리 저장소 1초 손실 재피팅(11/19) 값
@@ -55,20 +56,27 @@ def windows(segs, H, stride):
     return torch.as_tensor(np.stack([F[s:s + H + 1] for F in segs for s in range(0, len(F) - H - 1, stride)]), dtype=torch.float64)
 
 
+MODEL = "p2"  # [11/26] --model p1 이면 P1 (SPEC 에서 h 를 뺌)
+
+
+def spec():
+    return {k: v for k, v in SPEC.items() if not (MODEL == "p1" and k == "h")}
+
+
 class Params(torch.nn.Module):
     def __init__(self, init=None):
         super().__init__()
         self.raw = torch.nn.ParameterDict()
-        for k, (v0, lo, hi) in SPEC.items():
+        for k, (v0, lo, hi) in spec().items():
             v = (init or {}).get(k, v0)
             u = min(max((v - lo) / (hi - lo), 1e-4), 1 - 1e-4)
             self.raw[k] = torch.nn.Parameter(torch.tensor(math.log(u / (1 - u)), dtype=torch.float64))
 
     def values(self):
-        return {k: SPEC[k][1] + (SPEC[k][2] - SPEC[k][1]) * torch.sigmoid(self.raw[k]) for k in SPEC}
+        return {k: SPEC[k][1] + (SPEC[k][2] - SPEC[k][1]) * torch.sigmoid(self.raw[k]) for k in spec()}
 
     def params(self):
-        return p2.P2Params(**self.values())
+        return (p1.P1Params if MODEL == "p1" else p2.P2Params)(**self.values())
 
 
 def simulate(P, W, H):
@@ -107,15 +115,19 @@ def main():
     ap.add_argument("--lr", type=float, default=0.03)
     ap.add_argument("--threads", type=int, default=8)
     ap.add_argument("--eval-only", action="store_true")
-    ap.add_argument("--out", default=p2.FIT)
+    ap.add_argument("--model", default="p2", choices=["p1", "p2"])
+    ap.add_argument("--out", default=None, help="기본: results/sim/<model>_fit.json")
     a = ap.parse_args()
+    global MODEL
+    MODEL = a.model
+    a.out = a.out or (p1.FIT if MODEL == "p1" else p2.FIT)
     torch.set_num_threads(a.threads)
     torch.manual_seed(0)
     sp = D.get_split()
     tr, va, te = (load_runs(sp[k]) for k in ("train", "val", "test"))
     print(f"구간: 학습 {len(tr)}개 {sum(map(len, tr)) / 6000:.1f}분, 검증 {len(va)}개, 시험 {len(te)}개 {sum(map(len, te)) / 6000:.1f}분", flush=True)
     if a.eval_only:
-        P = Params({k: v for k, v in json.load(open(a.out))["params"].items() if k in SPEC})
+        P = Params({k: v for k, v in json.load(open(a.out))["params"].items() if k in spec()})
     else:
         Wtr, Wva = windows(tr, a.H, 10), windows(va, a.H, 25)
         std = Wtr[:, 1:, :3].reshape(-1, 3).std(0)
@@ -139,12 +151,12 @@ def main():
                       f"{ {k: round(float(t), 3) for k, t in P.values().items()} }", flush=True)
         P.load_state_dict(best_state)
         test = errors(P, te)
-        p2.save_fit(p2.P2Params(**{k: float(t) for k, t in P.values().items()}), a.out, best_val=best, H=a.H, iters=a.iters, split=dict(train=sp["train"], val=sp["val"]),
+        p2.save_fit((p1.P1Params if MODEL == "p1" else p2.P2Params)(**{k: float(t) for k, t in P.values().items()}), a.out, model=MODEL, best_val=best, H=a.H, iters=a.iters, split=dict(train=sp["train"], val=sp["val"]),
                     fixed=dict(m=p2.P2Params().m, L=p2.P2Params().L, brake_front=p2.P2Params().brake_front),
                     test=test, note="experiments/golf/fit_p2.py (팀 기준 힘 정의·분할·경사 지도)")
         print("saved", os.path.relpath(a.out, REPO))
     print("\n시험 주행 롤아웃 RMSE (r rad/s, vy·vx m/s)")
-    for name, model in (("P2", P), ("현재값 유지", None)):
+    for name, model in ((MODEL.upper(), P), ("현재값 유지", None)):
         res = errors(model, te)
         print(f"{name:8s} " + "  ".join(f"{h}: r {v['r']:.3f} vy {v['vy']:.3f} vx {v['vx']:.3f}" for h, v in res.items()))
         print(f"{'└0.8g+':8s} " + "  ".join(f"{h}: r {v['hi']['r']:.3f} vy {v['hi']['vy']:.3f} (창 {v['hi']['n']})" for h, v in res.items()))

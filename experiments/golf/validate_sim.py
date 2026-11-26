@@ -250,15 +250,15 @@ def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
                 v_err_rms=float(np.sqrt(np.mean(ev_a ** 2))))
 
 
-WORLD = "cr"  # [11/25] 세계: "cr" = CommonRoad(sim.calibrated_world), "p2" = P2 자전거(p2.P2World.from_fit). 명령줄 두 번째 인자
+WORLD = "cr"  # [11/25] 세계: "cr" = CommonRoad(sim.calibrated_world), "p2" = P2 자전거(p2.P2World.from_fit), "p1" = P1 자전거 [11/26]. 명령줄 두 번째 인자
 
 
 def make_world(**kw):
-    if WORLD == "p2":
-        from deep_dynamics.golf import p2
+    if WORLD in ("p1", "p2"):  # [11/26] p1 = P1 자전거 (p1.P1World, results/sim/p1_fit.json)
+        from deep_dynamics.golf import p1, p2
         d = dict(p2.DEFAULT_DELAYS if sim.load_delays() is None else sim.load_delays())
         d.update(kw.pop("delays", None) or {})
-        return p2.P2World.from_fit(delays=d, **kw)
+        return (p1.P1World if WORLD == "p1" else p2.P2World).from_fit(delays=d, **kw)
     return sim.calibrated_world(**kw)
 
 
