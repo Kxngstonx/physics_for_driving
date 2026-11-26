@@ -1,0 +1,46 @@
+{
+ "name": "thunderhill_east",
+ "length_m": 4609,
+ "mincurv_opt": {
+  "success": false,
+  "nit": 50000,
+  "cost_center": 0.5480901129710816,
+  "cost_start": 0.5480901129710816,
+  "cost": 0.2922212268181209
+ },
+ "width_total_min_median_max": [
+  10.9,
+  10.9,
+  10.9
+ ],
+ "z_range_m": 34.337880120811036,
+ "grade_p1_p99_deg": [
+  -8.14,
+  6.86
+ ],
+ "source": "OSM way 28825115 (ODbL) + USGS 3DEP 1 m (10 m 간격)",
+ "width": "10.9 m 균일 [가정: West 실측 평균]",
+ "usgs_missing": 0,
+ "osm_points": 260,
+ "osm_to_center_max_m": 1.273597433075673,
+ "center": {
+  "length_m": 4609.0,
+  "kappa_absmax": 0.08995486016956697,
+  "min_radius_m": 11.116686726153285,
+  "vref_min": 11.439651923912566,
+  "vref_max": 47.61564656271264,
+  "lap_time_profile": 144.64967934601725,
+  "frac_above_data_vmax": 0.4909958776307225,
+  "width_min": 5.449619228261048
+ },
+ "mincurv": {
+  "length_m": 4538.0,
+  "kappa_absmax": 0.04950874721035091,
+  "min_radius_m": 20.198450907094003,
+  "vref_min": 15.419992350137877,
+  "vref_max": 49.26216785664245,
+  "lap_time_profile": 131.10888131447166,
+  "frac_above_data_vmax": 0.618774790656677,
+  "width_min": 0.993591379166328
+ }
+}

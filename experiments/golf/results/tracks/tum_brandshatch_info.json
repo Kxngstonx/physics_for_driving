@@ -1,0 +1,45 @@
+{
+ "name": "tum_brandshatch",
+ "length_m": 3905,
+ "mincurv_opt": null,
+ "width_total_min_median_max": [
+  7.450167715015164,
+  9.100441711833804,
+  12.054247507197548
+ ],
+ "z_range_m": 0.0,
+ "grade_p1_p99_deg": [
+  0.0,
+  0.0
+ ],
+ "source": "TUMFTM racetrack-database (LGPL-3.0): 중앙선 OSM 평활, 폭 위성 이미지, raceline TUM 최소 곡률",
+ "grade": "없음 (0)",
+ "center": {
+  "length_m": 3904.0,
+  "kappa_absmax": 0.04480768588330507,
+  "min_radius_m": 22.31759976635149,
+  "vref_min": 16.20872556524694,
+  "vref_max": 48.02332504031496,
+  "lap_time_profile": 120.36073083409079,
+  "frac_above_data_vmax": 0.5040983606557377,
+  "width_min": 3.3571818678925305
+ },
+ "raceline": {
+  "length_m": 3883.0,
+  "kappa_absmax": 0.03977477603874142,
+  "min_radius_m": 25.141562054956143,
+  "vref_min": 17.203676017379067,
+  "vref_max": 49.14675163552529,
+  "lap_time_profile": 106.74705920438011,
+  "frac_above_data_vmax": 0.7352562451712593,
+  "width_min": 0.5982467596209244
+ },
+ "raceline_margin": {
+  "ours_min": 0.5982467596209244,
+  "ours_p1": 0.7332353883210425,
+  "raw_min": 0.6795511026005765,
+  "raw_p1": 0.7409647445189995,
+  "ours_frac_below_0p9": 0.25315477723409735,
+  "raw_frac_below_0p9": 0.24453024453024452
+ }
+}

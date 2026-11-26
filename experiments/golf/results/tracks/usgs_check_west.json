@@ -1,0 +1,17 @@
+{
+ "points": 2661,
+ "usgs_missing": 0,
+ "grade_rms_diff_deg": 0.24100512432436128,
+ "grade_p99_absdiff_deg": 0.7379595975771157,
+ "grade_corr": 0.9889819954467499,
+ "z_offset_m": 91.51675151550778,
+ "z_rms_after_offset_m": 0.12153898570169301,
+ "grade_range_d7_deg": [
+  -5.02,
+  4.16
+ ],
+ "grade_range_usgs_deg": [
+  -4.71,
+  4.24
+ ]
+}

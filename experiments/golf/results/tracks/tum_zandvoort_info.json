@@ -1,0 +1,45 @@
+{
+ "name": "tum_zandvoort",
+ "length_m": 4316,
+ "mincurv_opt": null,
+ "width_total_min_median_max": [
+  7.9819629999654325,
+  9.472095427081015,
+  16.061117741330495
+ ],
+ "z_range_m": 0.0,
+ "grade_p1_p99_deg": [
+  0.0,
+  0.0
+ ],
+ "source": "TUMFTM racetrack-database (LGPL-3.0): 중앙선 OSM 평활, 폭 위성 이미지, raceline TUM 최소 곡률",
+ "grade": "없음 (0)",
+ "center": {
+  "length_m": 4316.0,
+  "kappa_absmax": 0.07359597629836165,
+  "min_radius_m": 13.587699359350186,
+  "vref_min": 12.647307889755448,
+  "vref_max": 50.57629419833573,
+  "lap_time_profile": 138.74854425746503,
+  "frac_above_data_vmax": 0.4937442075996293,
+  "width_min": 3.7991812612585005
+ },
+ "raceline": {
+  "length_m": 4244.0,
+  "kappa_absmax": 0.03163953204414983,
+  "min_radius_m": 31.60603003244799,
+  "vref_min": 19.289017225923608,
+  "vref_max": 51.07364269281791,
+  "lap_time_profile": 125.08810186358917,
+  "frac_above_data_vmax": 0.5914231856738925,
+  "width_min": 0.5159464055883092
+ },
+ "raceline_margin": {
+  "ours_min": 0.5159464055883092,
+  "ours_p1": 0.7020053495313218,
+  "raw_min": 0.6687875744400733,
+  "raw_p1": 0.731620265991997,
+  "ours_frac_below_0p9": 0.3459000942507069,
+  "raw_frac_below_0p9": 0.33568904593639576
+ }
+}

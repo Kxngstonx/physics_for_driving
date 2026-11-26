@@ -1,0 +1,45 @@
+{
+ "name": "tum_oschersleben",
+ "length_m": 3692,
+ "mincurv_opt": null,
+ "width_total_min_median_max": [
+  8.421642898284311,
+  10.058499673085159,
+  16.33144256197461
+ ],
+ "z_range_m": 0.0,
+ "grade_p1_p99_deg": [
+  0.0,
+  0.0
+ ],
+ "source": "TUMFTM racetrack-database (LGPL-3.0): 중앙선 OSM 평활, 폭 위성 이미지, raceline TUM 최소 곡률",
+ "grade": "없음 (0)",
+ "center": {
+  "length_m": 3692.0,
+  "kappa_absmax": 0.04033577760809221,
+  "min_radius_m": 24.791885995508334,
+  "vref_min": 17.08362028198719,
+  "vref_max": 46.82550406514564,
+  "lap_time_profile": 125.97010100233203,
+  "frac_above_data_vmax": 0.335590465872156,
+  "width_min": 4.089653741681644
+ },
+ "raceline": {
+  "length_m": 3632.0,
+  "kappa_absmax": 0.025400660620871287,
+  "min_radius_m": 39.369054802390345,
+  "vref_min": 21.527947257779573,
+  "vref_max": 47.98784789963203,
+  "lap_time_profile": 108.95001059467883,
+  "frac_above_data_vmax": 0.5322136563876652,
+  "width_min": 0.5158905919175458
+ },
+ "raceline_margin": {
+  "ours_min": 0.5158905919175458,
+  "ours_p1": 0.7019998296630695,
+  "raw_min": 0.5338691346007893,
+  "raw_p1": 0.7415414731014159,
+  "ours_frac_below_0p9": 0.28056167400881055,
+  "raw_frac_below_0p9": 0.2737276478679505
+ }
+}
