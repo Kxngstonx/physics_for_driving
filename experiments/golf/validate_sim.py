@@ -8,10 +8,10 @@
 
 재생: 기록된 상태(vx, vy, r, 조향, 위치·방향)로 시작해 기록된 Fxf·조향을 넣는다. 지연·구동력 상한은 넣지 않는다
 (기록값은 이미 실제로 작용한 값). 조향은 0.04초 동안 다음 기록값까지 일정한 속도로 움직인다.
-경사: 관성 센서 고도 변화율 Vu / 속력 (0.5 Hz 저역 통과). 데이터의 grade_rad 는 고도 변화와 맞지 않아 쓰지 않음 (sim.py).
+경사: [변경 11/21 사용자 결정] OSM 경사 지도 (data.grade_at, 경로는 트랙 npz 의 grade) — 학습 데이터·MPPI 와 같은 원천.
+      이전(11/18~11/20)은 관성 센서 Vu / 속력이었다. 데이터의 grade_rad 는 고도 변화와 맞지 않아 쓰지 않음 (sim.py).
 출력: experiments/golf/results/sim/validation.json (단계별 키), validation.md, validation_*.png
 """
-import functools
 import json
 import math
 import os
@@ -41,23 +41,13 @@ def save_json(d):
     json.dump(d, open(JS, "w"), indent=1)
 
 
-@functools.lru_cache(maxsize=None)
-def slope_of(name):
-    """파일 → (시각, 경사 rad). 관성 센서 Vu / 속력 (0.5 Hz 2차 저역 통과)."""
-    df = D.read_raw(name)
-    vu = D.lowpass(df["Vu_mps"].to_numpy(), cutoff=0.5, order=2)
-    sp = np.hypot(df["Ve_mps"].to_numpy(), df["Vn_mps"].to_numpy())
-    return df["t_s"].to_numpy(), np.arctan2(vu, np.maximum(sp, 1.0))
-
-
 def windows(names, horizon, stride=25):
     """(파일 단위로 나눈) 구간에서 재생 시작점. 각 항목: 시작 상태, 입력열, 정답열, 경사열."""
     W = []
     for n in names:
-        ts, sl = slope_of(n)
         for sg in D.load_run(n):
-            s, u, t, x, y = sg["s"], sg["u"], sg["t"], sg["x"], sg["y"]
-            g = np.interp(t, ts, sl)
+            s, u, x, y = sg["s"], sg["u"], sg["x"], sg["y"]
+            g = D.grade_at(x, y)  # [11/21] OSM 경사 지도 (모델 입력과 같은 원천)
             for k in range(0, len(s) - horizon - 1, stride):
                 hd = math.atan2(y[k + 1] - y[k], x[k + 1] - x[k])  # 진행 방향 → 차 방향 = 진행 방향 − 옆미끄럼각
                 psi = hd - math.atan2(s[k, 1], s[k, 0])
@@ -115,7 +105,7 @@ def stage_mu(res):
 
 def stage_replay(res):
     sp = D.get_split()
-    mu = sim.load_calibration()["mu_scale"]
+    mu = None  # [11/23] 기본 시뮬레이터 st 는 보정 마찰 배율 없음 (이전: 다물체 calibration.json 의 mu_scale 을 그대로 넣음)
     out = {}
     for key, K in HORIZONS.items():
         W = windows(sp["test"], K)
@@ -123,7 +113,7 @@ def stage_replay(res):
         out[key] = metrics(W, replay(W, mu))
         print(key, json.dumps({k: v for k, v in out[key].items()}, ensure_ascii=False)[:400], f"{time.time() - t0:.0f}s", flush=True)
     ev = json.load(open(os.path.join(os.path.dirname(OUT), "eval_roll25.json")))
-    res["replay"] = dict(files=sp["test"], mu=mu, **out, models_1s=ev.get("openloop", {}).get("all"))
+    res["replay"] = dict(files=sp["test"], sim_model=sim.calibrated_world().model, **out, models_1s=ev.get("openloop", {}).get("all"))
 
 
 def lap_info(run=None):
@@ -136,17 +126,18 @@ def lap_info(run=None):
 
 
 def recorded_track(info=None):
-    """기록 주행선 트랙 + 기록 속도(랩 info, 기본은 2023-10_8 가장 빠른 랩)를 위치별로 + 위치별 경사."""
+    """그 랩의 기록 주행선 트랙 + 그 랩의 기록 속도를 위치별로 + 위치별 경사 (랩 info, 기본은 2023-10_8 가장 빠른 랩).
+    [변경 11/20] 경로와 목표 속도를 같은 랩에서: 검증 랩은 thunderhill_recorded.npz, 다른 랩은 thunderhill_recorded_<랩>.npz
+    (track_osm.build_all 이 만듦, 경로 0번 = 랩 출발점)."""
     from deep_dynamics.golf import mppi
     import torch
     info = info or lap_info()
     df = D.read_raw(info["run"])
     t = df["t_s"].to_numpy()
     m = (t >= info["t0"]) & (t <= info["t0"] + info["lap_time"])
-    ts, sl = slope_of(info["run"])
     px, py = df["posE_m"].to_numpy()[m], df["posN_m"].to_numpy()[m]
     v = np.hypot(df["Vx_mps"].to_numpy()[m], df["Vy_mps"].to_numpy()[m])
-    tr = mppi.Track(TRACK)
+    tr = mppi.Track(TRACK if info["run"] == lap_info()["run"] else TRACK.replace(".npz", f"_{info['run']}.npz"))
     from deep_dynamics.golf.track import project
     # 표본마다 트랙 위치를 찾고 위치별 평균. 출발선 근처는 랩 처음(출발 중)과 끝(달리는 중)이 같은 위치에 겹치므로,
     # 랩 앞쪽 절반의 표본은 트랙 앞쪽 절반에만, 뒤쪽 절반은 뒤쪽 절반에만 쓴다 (11/19: 이전처럼 트랙 점마다 가장 가까운 표본을
@@ -160,7 +151,7 @@ def recorded_track(info=None):
     pos = np.arange(n)
     per = lambda val: np.interp(pos, pos[has], (np.bincount(idx[keep], weights=val[keep], minlength=n)[has] / cnt[has]))
     tr.vref = torch.tensor(per(v), dtype=torch.float32, device=mppi.DEV)
-    grade = per(sl[m])
+    grade = tr.np["grade"]  # [11/21] OSM 경사 지도를 이 경로에 투영한 값 (track_osm.make_path). 이전: 이 랩의 Vu 경사 위치별 평균
     info = dict(info, start_idx=int(idx[0]))  # 이 랩이 실제로 출발한 트랙 위치 (주행도 여기서 시작)
     return tr, grade, info
 
@@ -168,7 +159,7 @@ def recorded_track(info=None):
 # ---------------------------------------------------------------- 모델 없는 운전자 (11/19 사용자 결정)
 # 시뮬레이터 검증이 학습 모델(R1–R6)에 기대지 않도록, 고전 제어기로 기록 주행선·기록 속도를 따라간다.
 #   조향: pure pursuit (앞쪽 경로 한 점을 겨눔) + 언더스티어 보정 + 횡오차 PI.
-#         언더스티어 계수 K_us = m/L·(lr/Cf − lf/Cr) 는 제원 추정의 축별 코너링 강성(specs.json)에서 — 학습 모델이 아님
+#         언더스티어 계수 K_us = m/L·(lr/Cf − lf/Cr) 는 축별 코너링 강성(deep_dynamics/golf/specs.json, 11/21 Fiala)에서 — 학습 모델이 아님
 #   속도: 앞쪽(0.3초 뒤 도달할 지점)의 기록 속도를 목표로 PI + 목표 속도 변화·저항·경사를 미리 보상
 # 운전 실력이 실제 Stanford 제어기와 다르므로 랩타임 외에 속도·횡오차 추종도 함께 기록한다 (계획서 8-3절의 한계)
 FREE = dict(look_t=0.8, look_min=6.0, look_max=30.0, k_ey=0.02, ki_ey=0.01, kp_v=1.0, ki_v=0.1, prev_t=0.3,
@@ -178,12 +169,14 @@ FREE = dict(look_t=0.8, look_min=6.0, look_max=30.0, k_ey=0.02, ki_ey=0.01, kp_v
 def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
     """tr: mppi.Track (vref = 목표 속도, 1 m 간격). world: sim.World (reset·set_pos·step·pose).
     트랙 위치 i0 에서 vref[i0] 속도로 시작해 한 바퀴 (정지 출발이면 vref[i0] ≈ 0.5~1 m/s)."""
+    from deep_dynamics.golf import mppi
     P = np.c_[tr.np["x"], tr.np["y"]]
     psi_t, vref, n = tr.np["psi"], tr.vref.detach().cpu().numpy().astype(float), len(P)
     wl, wr = tr.np["width_l"], tr.np["width_r"]
-    p, spec = world.p, json.load(open(sim.SPECS))["GOLF"]["final"]
+    from deep_dynamics.golf.golf_specs import value
+    p = world.p
     L = p.a + p.b
-    K_us = p.m / L * (p.b / spec["Cf_lin"] - p.a / spec["Cr_lin"])
+    K_us = p.m / L * (p.b / value("tire_stiffness_f") - p.a / value("tire_stiffness_r"))
     g = gains
     world.reset(P[i0, 0], P[i0, 1], float(psi_t[i0]), max(float(vref[i0]), 0.5), F0=0.0)
     i, prog, last, delta, ie_y, ie_v = i0, 0, i0, 0.0, 0.0, 0.0
@@ -203,7 +196,7 @@ def drive_free(world, tr, v_armed=10.0, v_stall=3.0, gains=FREE, i0=0):
         if d < n / 2:
             prog += d
         last = i
-        if abs(ey) > (wl[i] if ey > 0 else wr[i]) + 2.0:
+        if abs(ey) > (wl[i] if ey > 0 else wr[i]) + mppi.OFF_TRACK_M:  # [11/21] 팀 기준 0.9 m (이전 2.0 m), mppi.episode 와 같음
             status = "off_track"
             break
         armed = armed or vx >= v_armed
@@ -259,7 +252,13 @@ def stage_closed_free(res):
             r = dict(prev_t=pt, kp_v=kp, **r, rel_err=((r["lap_time"] - info_t["lap_time"]) / info_t["lap_time"]) if r["finished"] else None)
             grid.append(r)
             print("tune", json.dumps(r, ensure_ascii=False), flush=True)
-    best = min((r for r in grid if r["finished"]), key=lambda r: abs(r["rel_err"]))
+    fin_t = [r for r in grid if r["finished"]]
+    if not fin_t:  # [11/22] 튜닝 랩에서 완주한 설정이 없으면 검증 랩은 돌리지 않고 미달로 기록 (이전에는 여기서 멈춤)
+        res["closed_free"] = dict(sim_model=sim.calibrated_world().model, lap_record=None, gains=None, runs=[], tune_lap=dict(info_t, grid=grid),
+                                  steer_delay=None, passed=False, note="튜닝 랩에서 완주한 운전자 설정 없음")
+        print("튜닝 랩 완주 없음 → 미달", flush=True)
+        return
+    best = min(fin_t, key=lambda r: abs(r["rel_err"]))
     gains = dict(FREE, prev_t=best["prev_t"], kp_v=best["kp_v"])
     tr, grade, info = recorded_track()
     lap_rec = info["lap_time"]
@@ -272,7 +271,7 @@ def stage_closed_free(res):
         print(json.dumps(r, ensure_ascii=False), flush=True)
     fin = [r for r in rows if r["finished"]]
     pick = min(fin, key=lambda r: abs(r["rel_err"])) if fin else None
-    res["closed_free"] = dict(mu=sim.load_calibration()["mu_scale"], lap_record=lap_rec, gains=gains, runs=rows,
+    res["closed_free"] = dict(sim_model=sim.calibrated_world().model, lap_record=lap_rec, gains=gains, runs=rows,
                               tune_lap=dict(info_t, grid=grid),
                               steer_delay=pick["steer_delay"] if pick else None,
                               passed=bool(pick and abs(pick["rel_err"]) <= 0.02))
@@ -288,7 +287,6 @@ def stage_closed(res, key="closed", mppi_kw=None):
     from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG, cfg_of_model
     from deep_dynamics.golf.ladder import load_model
     tr, grade, info = recorded_track()
-    mu = sim.load_calibration()["mu_scale"]
     lap_rec = info["lap_time"]
     mdir = os.path.join(os.path.dirname(OUT), "models")
     mppi_kw = mppi_kw or {}
@@ -306,7 +304,7 @@ def stage_closed(res, key="closed", mppi_kw=None):
                                                                      "ey_max", "v_err_mean", "wall_s")})
             rows.append(row)
             print(json.dumps(row, ensure_ascii=False), flush=True)
-            res[key] = dict(mu=mu, lap_record=lap_rec, track=TRACK, mppi=mppi_kw, runs=rows)
+            res[key] = dict(sim_model=sim.calibrated_world().model, lap_record=lap_rec, track=TRACK, mppi=mppi_kw, runs=rows)
             save_json(res)
             del model
             torch.cuda.empty_cache()
@@ -350,7 +348,7 @@ def stage_report(res):
         L += ["", "![](validation_mu.png)", ""]
     if "replay" in res:
         r = res["replay"]
-        L += [f"## 2. 개루프 재생 (시험 파일 {', '.join(r['files'])}, mu_scale {r['mu']:.2f})", "",
+        L += [f"## 2. 개루프 재생 (시험 파일 {', '.join(r['files'])}, 시뮬레이터 {r.get('sim_model', 'mb')})", "",
               "| 구간 | 시작점 | 발산 | vx 최대 / RMSE (m/s) | 옆미끄럼각 (rad) | r (rad/s) | 위치 (m) |", "|---|---|---|---|---|---|---|"]
         for key in HORIZONS:
             q = r[key]
@@ -363,7 +361,7 @@ def stage_report(res):
         if key not in res or "summary" not in res[key]:
             continue
         c = res[key]
-        L += [f"## {title} (기록 주행선 + 기록 속도, 기록 랩타임 {c['lap_record']:.2f} s, mu_scale {c['mu']:.3f}, MPPI {c.get('mppi', {})})", "",
+        L += [f"## {title} (기록 주행선 + 기록 속도, 기록 랩타임 {c['lap_record']:.2f} s, 시뮬레이터 {c.get('sim_model', 'mb')}, MPPI {c.get('mppi', {})})", "",
               "| 조향 지연 (s) | 완주 | 완주 모델 랩타임 중앙값 (s) | 기록 대비 | 6개 중앙값 기록 대비 |", "|---|---|---|---|---|"]
         for k, s in c["summary"].items():
             L.append(f"| {k} | {s['finished']}/6 | {s.get('median_lap_finished', math.inf):.2f} | {100 * s.get('rel_err_finished', math.inf):+.1f}% | "
@@ -374,9 +372,14 @@ def stage_report(res):
         for q in c["runs"]:
             L.append(f"| {q['rung']} | {q['steer_delay']} | {q['status']} | {q['progress_frac']:.2f} | "
                      f"{q['lap_time'] if q['lap_time'] else '-'} | {q['ey_mean']:.2f} / {q['ey_max']:.2f} | {q['v_err_mean'] or float('nan'):.2f} |")
-    if "closed_free" in res:
+    if "closed_free" in res and res["closed_free"].get("gains") is None:
         c = res["closed_free"]
-        L += ["", f"## 5. 폐루프 근사 — 모델 없는 운전자 (기록 랩타임 {c['lap_record']:.2f} s, mu_scale {c['mu']:.3f})", "",
+        L += ["", "## 5. 폐루프 근사 — 모델 없는 운전자", "", f"**미달: {c['note']}** (튜닝 랩 {c['tune_lap']['run']}, 기록 {c['tune_lap']['lap_time']:.2f} s)", "",
+              "| 미리보기 (s) | 비례 이득 | 결과 | 진행률 | 횡오차 평균 / 최대 (m) |", "|---|---|---|---|---|"]
+        L += [f"| {q['prev_t']} | {q['kp_v']} | {q['status']} | {q['progress_frac']:.3f} | {q['ey_mean']:.2f} / {q['ey_max']:.2f} |" for q in c["tune_lap"]["grid"]]
+    elif "closed_free" in res:
+        c = res["closed_free"]
+        L += ["", f"## 5. 폐루프 근사 — 모델 없는 운전자 (기록 랩타임 {c['lap_record']:.2f} s, 시뮬레이터 {c.get('sim_model', 'mb')})", "",
               "학습 모델을 쓰지 않는 고전 제어기(pure pursuit + 언더스티어 보정 + 속도 PI)로 기록 주행선·기록 속도를 따라감.",
               f"운전자 설정은 다른 랩({c['tune_lap']['run']}, 기록 {c['tune_lap']['lap_time']:.2f} s)에서 고름: 속도 미리보기 {c['gains']['prev_t']} s, 속도 비례 이득 {c['gains']['kp_v']}", "",
               "| 미리보기 (s) | 비례 이득 | 결과 | 랩타임 (s) | 그 랩 기록 대비 |", "|---|---|---|---|---|"]

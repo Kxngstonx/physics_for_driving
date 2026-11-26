@@ -5,7 +5,7 @@
   엔진   : throttleCmd_percent   → engineTorque_Nm     (y = k·f + c 로 배율·치우침도 함께 맞춤. 토크는 rpm 에도 달려 있어 근사)
 격자: d 0~300 ms (5 ms), tau 0~300 ms (10 ms). 200 Hz 원본, 20개 파일 전체.
 쓰는 값(use): 지연 없음보다 RMS 가 1% 이상 줄 때만 맞춘 값, 아니면 (0, 0) — 데이터로 정해지지 않은 지연을 넣지 않음.
-python experiments/golf/fit_delays.py → experiments/golf/results/sim/delays.json
+python experiments/golf/fit_delays.py  (확인용 출력. [변경 11/21] 값은 estimate_specs 가 specs.json 의 actuator_delays 로)
 """
 import json
 import os
@@ -25,7 +25,7 @@ TAUS = np.arange(0, 0.301, 0.01)
 def runs(cmd_cols, act_cols):
     out = []
     for n in D.available():
-        df = D.read_raw(n)
+        df = D.read_csv(n)
         auto = df["auto_throttle_bool"].to_numpy() > 0.5
         c = df[cmd_cols].to_numpy().mean(1)
         a = df[act_cols].to_numpy().mean(1)
@@ -60,7 +60,8 @@ def fit(pairs, active):
     return best, grid
 
 
-if __name__ == "__main__":
+def estimate():
+    """→ {"brake": {...}, "engine": {...}} (use = 시뮬레이터에 쓰는 (지연 d, 1차 지연 tau) 초). estimate_specs 가 부른다."""
     res = {}
     br = runs(["brakeCmd_fl_bar", "brakeCmd_fr_bar"], ["brake_fl_bar", "brake_fr_bar"])
     b, gb = fit(br, lambda c, a: (c > 1.0) | (a > 1.0))
@@ -74,6 +75,8 @@ if __name__ == "__main__":
                          segments=len(pairs), samples=int(sum(len(c) for c, _ in pairs)),
                          near_best=[(float(d), float(t)) for d, t, r in grid if r <= bst[2] * 1.02][:20])
         print(name, f"d {bst[0] * 1e3:.0f} ms tau {bst[1] * 1e3:.0f} ms rms {bst[2]:.3f} (지연 없음 {zero:.3f}) → 사용 {use}")
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results", "sim")
-    os.makedirs(out, exist_ok=True)
-    json.dump(res, open(os.path.join(out, "delays.json"), "w"), indent=1)
+    return res
+
+
+if __name__ == "__main__":  # 확인용 출력만. 시뮬레이터가 쓰는 값은 estimate_specs 가 specs.json 에 넣는다 (11/21)
+    print(json.dumps(estimate(), indent=1))

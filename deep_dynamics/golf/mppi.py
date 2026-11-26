@@ -36,6 +36,32 @@ F_CRUISE = sim.road_load(20.0)  # 20 m/s 정속 주행 저항 — 첫 계획의 
 OFF_TRACK_M = 0.9  # [11/19 팀 결정] 이탈 판정: 차 중심이 경계 밖으로 이만큼 넘으면 (Golf 폭 약 1.79 m 의 절반 = 차 전체가 밖)
 
 
+# [11/23 사용자 결정] B 보상 ablation: 기본 B 에 하나씩 더하는 항목. 가중치 단위 = B 의 진행 1 m 보상 (2/DT = 50)
+B_REWARDS = ("vlim", "term", "slip", "wall")
+W_PROG_M = 2.0 / DT
+WALL_ZONE_M = 1.5  # 원본 iac_sim A 방식의 경계 여유
+W_WALL = 1e4  # A 방식 이탈 벌점
+LOOKAHEAD_M = 200  # ② 계획 끝에서 내다보는 거리 (중심선 1 m 간격)
+
+
+def speed_limit(track, ay_max, smooth_m=10):
+    """중심선 곡률 κ (방향각 변화 / 1 m, smooth_m 이동 평균) → 한계 속도 √(ay_max/|κ|) (m/s, 100 으로 자름). 트랙은 닫힌 고리."""
+    psi = track.np["psi"].astype(float)
+    n = len(psi)
+    dpsi = (np.roll(psi, -1) - psi + np.pi) % (2 * np.pi) - np.pi  # 1 m 당 방향각 변화 (끝→처음 이음)
+    k = np.ones(smooth_m) / smooth_m
+    kap = np.convolve(np.r_[dpsi[-smooth_m:], dpsi, dpsi[:smooth_m]], k, "same")[smooth_m:smooth_m + n]
+    return np.minimum(np.sqrt(ay_max / np.maximum(np.abs(kap), 1e-6)), 100.0)
+
+
+def feasible_speed(vlim, a_brk, ahead=LOOKAHEAD_M):
+    """각 위치에서 앞 ahead m 안의 모든 점 j 의 한계 속도까지 감속 a_brk 로 줄일 수 있는 최대 속도: min_j √(vlim_j² + 2·a·d_j)."""
+    n = len(vlim)
+    d = np.arange(ahead + 1)
+    idx = (np.arange(n)[:, None] + d[None, :]) % n
+    return np.sqrt(vlim[idx] ** 2 + 2.0 * a_brk * d[None, :]).min(1)
+
+
 def n_road(model):
     """모델 입력의 노면 열 수: 1 [bank] 또는 경사 채널 모델이면 2 [bank, grade]."""
     cfg = getattr(model, "cfg", None)
@@ -89,7 +115,9 @@ def kin(pose, s):
 
 class MPPI:
     def __init__(self, model, track, K=1024, N=25, sigma=SIGMA_FORCE, lam=0.3, seed=0, w=None, use_graph=True, corr=0.85,
-                 u_init=F_CRUISE, mode="A"):
+                 u_init=F_CRUISE, mode="A", rew=None):
+        """rew: [11/23 B 보상 ablation] 추가 보상 항목 하나 (기본 None = 없음, A·B 원래 그대로). B_REWARDS 참고.
+        dict(kind="vlim"|"term"|"slip"|"wall", ay_max=…, a_brk=…, beta_max=…)."""
         self.corr = corr
         vg, fg = sim.force_cap_table()
         self.cap_v = torch.tensor(vg, dtype=torch.float32, device=DEV)
@@ -115,6 +143,12 @@ class MPPI:
             self.off_margin = 0.9
         if w:
             self.w.update(w)
+        self.rew = rew
+        if rew:
+            assert rew["kind"] in B_REWARDS, rew
+            if rew["kind"] in ("vlim", "term"):
+                vlim = speed_limit(track, rew["ay_max"])
+                self.vlim = torch.tensor(vlim if rew["kind"] == "vlim" else feasible_speed(vlim, rew["a_brk"]), dtype=torch.float32, device=DEV)
 
     @torch.no_grad()
     def _rollout(self):
@@ -144,6 +178,8 @@ class MPPI:
             half = torch.where(ey > 0, self.tr.wl[ix], self.tr.wr[ix])
             off = (ey.abs() > half - self.off_margin).float()
             du = u - up
+            if self.rew:
+                cost = cost + self._extra(s_next, ey, half, ix, k == N - 1)
             cost = cost + (self.w["ey"] * ey ** 2 + self.w["epsi"] * epsi ** 2 + self.w["v"] * (s_next[:, 0] - self.tr.vref[ix]) ** 2
                            + self.w["du_d"] * du[:, 1] ** 2 + self.w["du_t"] * du[:, 0] ** 2 + self.w["off"] * off + self.w["bad"] * bad.float()
                            + self.w["slow"] * torch.relu(6.0 - s_next[:, 0]) ** 2 - self.w["prog"] * dprog.float())
@@ -152,6 +188,21 @@ class MPPI:
             s = s_next
         self.bUc.copy_(U)  # 속도별 힘 상한까지 적용한 조작 (가중 평균에 씀)
         self.bcost.copy_(cost)
+
+    def _extra(self, s, ey, half, ix, last):
+        """[11/23] B 보상 ablation 항목 (모두 '진행 1 m 보상 = W_PROG_M' 단위로 미리 정한 가중치, 결과로 맞추지 않음)."""
+        kind = self.rew["kind"]
+        z = torch.zeros_like(ey)
+        if kind == "vlim":  # ① 중심선 곡률 한계 속도 초과: 1 m/s 초과 = 진행 1 m
+            return W_PROG_M * torch.relu(s[:, 0] - self.vlim[ix]) ** 2
+        if kind == "term":  # ② 계획 끝에서 앞 200 m 코너까지 최대 제동으로 못 줄이는 속도
+            return W_PROG_M * torch.relu(s[:, 0] - self.vlim[ix]) ** 2 if last else z
+        if kind == "slip":  # ③ 옆 미끄럼각이 데이터 99% 를 넘음: 0.01 rad 초과 = 진행 1 m
+            beta = torch.atan2(s[:, 1].abs(), s[:, 0].clamp(min=0.5))
+            return W_PROG_M * (torch.relu(beta - self.rew["beta_max"]) / 0.01) ** 2
+        # ④ 경계 연속 벌점: 이탈 벌점선(half − off_margin) 1.5 m 안쪽부터 0 → 그 선에서 1e4 (A 방식 이탈 벌점)
+        d = ey.abs() - (half - self.off_margin - WALL_ZONE_M)
+        return W_WALL * (torch.relu(d) / WALL_ZONE_M) ** 2
 
     def _setup(self, nf):
         K, N = self.K, self.N

@@ -15,6 +15,7 @@
                 시험 파일 3개의 GPS 상하 속도(Vu/속력)와 RMS 0.09° 차이 (data 의 grade_rad 열은 고도 변화와 상관 −0.07이라 안 씀).
 그대로 둔 것 (track.py 재사용)
   recorded 경로 = track.best_lap (20개 주행 중 가장 빠른 완전한 한 바퀴, 2023-10_8). validate_sim 의 검증 랩과 같다.
+  [11/20] 경로 0번 = 랩 출발점. 튜닝 랩(TUNE_LAP)의 선은 thunderhill_recorded_<랩>.npz 에 따로 저장한다.
   목표 속도 vref = track.speed_profile (μ 1.2, +4.3 / −5.1 m/s²). 경로 3종 이름과 npz 키.
 
 중앙선 만드는 법
@@ -24,7 +25,7 @@
   3. 학습 파일의 닫힌 한 바퀴를 따라가며 가장 가까운 OSM 점을 모은다(갈림길에서 D7 이 간 쪽만).
   4. OSM 선은 점이 듬성한 곳에서 꺾이므로, D7 레이싱 라인에서 OSM 선까지의 좌우 거리를 10 m 로 평활해 레이싱 라인에 더한다
      (모양은 RTK-GPS 레이싱 라인, 위치는 OSM). 다듬은 선은 OSM 원래 선과 중앙값 0.9 m, 최대 2.8 m 다르다.
-오차 (docs/track_osm.md): 경사 RMS 0.09°, 기록선 0.013 m, 폭 ±0.2 m(측정점)·±0.5~0.8 m(측정 없는 곳),
+오차 (docs/old_ver/track_osm.md): 경사 RMS 0.09°, 기록선 0.013 m, 폭 ±0.2 m(측정점)·±0.5~0.8 m(측정 없는 곳),
   경계 좌우 위치 보통 ±1 m, 헤어핀(약 1,850·2,400 m) 안쪽 최대 +2 m.
 """
 import argparse
@@ -49,6 +50,7 @@ CAR_HALF = 0.9                    # Golf 폭 1.79 m 의 절반
 REF_ECEF = np.array([-2634230.47253972, -4161936.65368287, 4038639.74184999])   # 북위 39.538493°, 서경 122.331103°
 LAT0, LON0 = 39.538493, -122.331103
 OSM_WEST_WAYS = (756822999, 756823000, 1016088342)   # D7 경로와 겹치는 OSM highway=raceway 선 (West 짧은 판)
+TUNE_LAP = "2023-10_5"   # 튜닝 랩 (validate_sim.TUNE_LAP_RUN, tune_mppi.TUNE_RUN 과 같음). 경로 파일 thunderhill_recorded_<랩>.npz
 
 
 # ---------------------------------------------------------------- 좌표·OSM
@@ -233,9 +235,13 @@ def build_all(out_dir=OUT, width_points=WIDTH_POINTS, margin=1.0, smooth=10.0):
     off = pd.Series(le).groupby(li).median()
     rec_off = np.interp(np.arange(n), off.index.to_numpy(), off.to_numpy(), period=n)
     mc, mcinfo = min_curvature_offsets(center, -half_r + margin, half_l - margin, rec_off)
-    k0 = int(cKDTree(lap_xy).query(center[0])[1])
     nrm = normals(center)
-    paths = {"recorded": make_path(center, half_l, half_r, road, np.roll(lap_xy, -k0, 0)),
+    # [변경 11/20] 기록 경로는 그 랩의 실제 출발점에서 시작한다 (경로 0번 = 랩 출발점). 이전에는 0번을 중앙선 시작점에 맞춰
+    # 출발점이 경로 끝(2602번)에 놓였고, validate_sim.recorded_track 의 '랩 앞쪽 절반 = 경로 앞쪽 절반' 가정이 깨져
+    # 출발 지점 목표 속도가 랩 끝의 32 m/s 가 됐다. 튜닝 랩도 자기 선을 따로 만든다 (경로와 목표 속도를 같은 랩에서)
+    tune = best_lap([TUNE_LAP])
+    paths = {"recorded": make_path(center, half_l, half_r, road, lap_xy),
+             f"recorded_{TUNE_LAP}": make_path(center, half_l, half_r, road, np.c_[tune["x"], tune["y"]]),
              "center": make_path(center, half_l, half_r, road, center),
              "mincurv": make_path(center, half_l, half_r, road, center + mc[:, None] * nrm)}
 

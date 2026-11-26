@@ -1,11 +1,10 @@
 """시뮬레이터(sim.py)·MPPI 힘 입력(mppi.py) 점검 (docs/experiment_plan_golf.md 4-4, 8-2, 9-2절)."""
-import json
 import math
 
 import numpy as np
 import torch
 
-from deep_dynamics.golf import mppi, sim
+from deep_dynamics.golf import data as D, golf_specs, mppi, sim
 from deep_dynamics.golf.configs import GOLF_THUNDERHILL as CFG
 
 TRACK = "experiments/golf/results/tracks/thunderhill_recorded.npz"
@@ -14,7 +13,7 @@ M_EQ = CFG.m + 4 * sim.golf_params().I_y_w / sim.WHEEL_R ** 2
 
 
 def _run(v0, F, delta=0.0, steps=25, **kw):
-    w = sim.World(cap=False, **kw)
+    w = sim.World(cap=False, model="mb", **kw)
     w.reset(0.0, 0.0, 0.0, v0)
     for _ in range(steps):
         s = w.step(F, delta)
@@ -26,11 +25,13 @@ _res = sim.road_load
 
 def test_params_are_golf_values():
     p = sim.golf_params()
-    spec = json.load(open(sim.SPECS))["GOLF"]["final"]
+    v = golf_specs.value
     assert (p.m, p.a, p.b, p.R_w, p.T_se, p.T_sb) == (CFG.m, CFG.lf, CFG.lr, sim.WHEEL_R, 1.0, CFG.brake_front_share)
+    assert (p.m, p.a, p.b, p.R_w, p.T_sb) == (v("mass"), v("cg_a"), v("cg_b"), v("wheel_radius"), v("brake_front_share"))
     assert abs(p.m_s + p.m_uf + p.m_ur - p.m) < 1e-9
     Fz_f = p.m * sim.G * p.b / (p.a + p.b)
-    assert abs(-p.tire_f.p_ky1 * Fz_f - spec["Cf_lin"]) < 1e-6 * spec["Cf_lin"]
+    assert abs(-p.tire_f.p_ky1 * Fz_f - v("tire_stiffness_f")) < 1e-6 * v("tire_stiffness_f")
+    assert (p.steering.v_max, p.steering.v_min) == (v("steer_rate_max"), -v("steer_rate_max"))  # [11/21] 데이터 범위
     assert p.longitudinal.a_max * p.longitudinal.v_switch / 30.0 > 100  # Escort 가속 제한(30 m/s 에서 1.8 m/s²)이 풀림
     p, p2 = sim.golf_params(1.0), sim.golf_params(0.9)
     assert abs(p2.tire_f.p_dy1 - 0.9 * p.tire_f.p_dy1) < 1e-12 and abs(p2.tire_r.p_dx1 - 0.9 * p.tire_r.p_dx1) < 1e-12
@@ -47,11 +48,12 @@ def test_calibrated_track_and_roll():
 
 
 def test_drive_force_gives_expected_acceleration_and_is_not_clipped():
-    """Fxf → 가속도 변환 + Escort 가속 제한 해제: 30 m/s 에서 4.3 kN (약 2.6 m/s²) 이 잘리지 않음."""
+    """Fxf → 가속도 변환 + Escort 가속 제한 해제: 30 m/s 에서 4.3 kN (약 2.4 m/s²) 이 잘리지 않음.
+    [11/21 (가)] 구동은 바퀴 관성 보정으로 가속 = Fxf/m − 저항/M_EQ (데이터 효율을 추정한 식과 같은 Fxf/m)."""
     for v0, F in ((20.0, 2000.0), (30.0, 4300.0)):
         _, s = _run(v0, F)
         a = s[0] - v0
-        exp = (F - _res(v0 + 0.5 * a)) / M_EQ
+        exp = F / CFG.m - _res(v0 + 0.5 * a) / M_EQ
         assert abs(a - exp) < 0.03 * abs(exp), (v0, a, exp)
 
 
@@ -65,10 +67,18 @@ def test_brake_force_is_front_share_of_total():
 
 
 def test_straight_cruise_has_no_lateral_motion():
+    """직진 정속에서 옆 흐름이 없다 (기본 설정 = 표준 타이어 좌우 거울상, 타이어 밀림 항 그대로).
+    [11/22] CommonRoad 원본 식(tire_mirror=False)은 밀림 항을 sign(캠버)·하중의 3.7% 로 둬서 2초 뒤 vy −0.013 m/s 로 흘렀다.
+    거울상은 좌우가 상쇄된다 (mb_golf 모듈 설명, docs/code_map.md 4절 #9)."""
     v0 = 20.0
     _, s = _run(v0, _res(v0), steps=50)
-    # 완전한 0 은 아님: 2초 뒤 vy 5e-4 m/s, r 8e-4 rad/s (빌려온 Escort 서스펜션·타이어 식의 작은 비대칭 [확인]). 선회의 1/300 수준
-    assert abs(s[0] - v0) < 0.05 and abs(s[1]) < 0.01 and abs(s[2]) < 0.005
+    assert abs(s[0] - v0) < 0.05 and abs(s[1]) < 1e-3 and abs(s[2]) < 1e-3, s
+
+
+def test_mirrored_tires_turn_symmetrically():
+    """왼쪽·오른쪽 같은 조향의 회전 응답이 대칭 (기본 = 거울상. 원본 식은 약 1% 비대칭)."""
+    r = [_run(25.0, _res(25.0), delta=d, steps=100)[1][2] for d in (0.03, -0.03)]
+    assert abs(r[0] + r[1]) < 1e-3 * abs(r[0]), r
 
 
 def test_understeer_like_golf_data():
@@ -86,7 +96,7 @@ def test_abs_keeps_wheels_rolling_when_braking_in_a_turn():
 
 def test_force_cap_table():
     vg, fg = sim.force_cap_table()
-    t = np.genfromtxt(sim.FORCE_TABLE, delimiter=",", names=True)
+    t = {k: np.asarray(x) for k, x in golf_specs.value("drive_force_cap").items()}
     assert abs(sim.force_cap(9.0) - t["F_p99_N"][t["v_lo"] == 8][0]) < 1.0  # 8~10 m/s 구간 상위 1% (구간 가운데)
     hi = sim.force_cap(np.array([34.0, 40.0, 50.0]))
     assert (np.diff(hi) < 0).all()  # 32 m/s 이상은 일정 출력 → 속도에 반비례
@@ -205,3 +215,82 @@ def test_tuning_select_groups_by_horizon(tmp_path=None):
     T.select()
     ch = T.load()["chosen"]
     assert ch["B_25"] == dict(lam=0.3, noise=0.5) and ch["B_50"] == dict(lam=1.0, noise=2.0)
+
+
+def test_specs_items_have_source_and_basis():
+    """[11/21] specs.json 의 모든 항목에 출처(published/data/assumed)와 근거가 있다. 데이터 값은 20개 파일."""
+    items = golf_specs.load()["items"]
+    for k, it in items.items():
+        assert it["source"] in ("published", "data", "assumed") and len(it["basis"]) > 10, k
+        if it["source"] == "data":
+            assert it.get("files") == len(D.available()) == 20, k
+
+
+def test_model_data_sim_read_the_same_specs():
+    """[11/21] 모델(configs)·데이터(data)·시뮬레이터(sim)가 같은 specs 값을 쓴다 (손으로 옮겨 적은 곳 없음)."""
+    v = golf_specs.value
+    assert (CFG.m, CFG.lf, CFG.lr, CFG.brake_front_share) == (v("mass"), v("cg_a"), v("cg_b"), v("brake_front_share"))
+    P = dict((n, x) for n, x, *_ in CFG.phys)
+    assert (P["Iz"], P["Cr0"], P["Cr2"]) == (v("yaw_inertia"), v("resist_cr0"), v("resist_cr2"))
+    assert (sim.WHEEL_R, sim.F_BRAKE_MIN, (sim.TRACK_F, sim.TRACK_R)) == (v("wheel_radius"), v("brake_force_min"), (v("track_f"), v("track_r")))
+    assert sim.load_delays() == dict(brake=tuple(v("actuator_delays")["brake"]["use"]), engine=tuple(v("actuator_delays")["engine"]["use"]))
+    df = D.read_raw("2023-11_9")
+    assert np.allclose(df["Fxf"], v("drive_eff") * df["F_drive"] - df["F_brake_f"])
+    assert np.allclose(df["F_drive"], D.drive_force(df, v("gear_ratios"), v("wheel_radius"))[0])
+
+
+def test_b_reward_speed_limit_and_braking_feasible_speed():
+    """[11/23] B 보상 ablation ①②: 원 (반지름 50 m) 의 한계 속도 = √(ay·R), 제동 가능 속도 = min √(v_j² + 2·a·d_j)."""
+    from types import SimpleNamespace
+    n, ay = 314, 10.0  # 닫힌 원: 1 m 간격 314 점 → 반지름 n/(2π)
+    R = n / (2 * np.pi)
+    fake = SimpleNamespace(np=dict(psi=((2 * np.pi * np.arange(n) / n) + np.pi) % (2 * np.pi) - np.pi))
+    v = mppi.speed_limit(fake, ay)
+    assert np.allclose(v, math.sqrt(ay * R), rtol=1e-3), (v.min(), v.max())
+    vl = np.full(500, 40.0)
+    vl[100] = 15.0
+    vf = mppi.feasible_speed(vl, 5.0, ahead=200)
+    assert abs(vf[0] - math.sqrt(15.0 ** 2 + 2 * 5.0 * 100)) < 1e-9 and vf[100] == 15.0 and vf[101] == 40.0
+    assert abs(vf[499] - min(40.0, math.sqrt(15.0 ** 2 + 2 * 5.0 * 101))) < 1e-9  # 고리: 끝에서 처음 코너를 봄
+
+
+def test_b_reward_terms_zero_when_not_violated_and_positive_when_violated():
+    """[11/23] ①~④ 는 조건을 어길 때만 비용이 생긴다. ② 는 계획 마지막 스텝에서만."""
+    tr = mppi.Track(TRACK)
+    cfg = dict(ay_max=10.66, a_brk=4.83, beta_max=0.076)
+    ix = torch.tensor([0, 0], device=mppi.DEV)
+    half = torch.tensor([5.0, 5.0], device=mppi.DEV)
+    for kind in mppi.B_REWARDS:
+        m = mppi.MPPI(_Toy(), tr, K=8, N=5, mode="B", use_graph=False, rew=dict(kind=kind, **cfg))
+        if kind in ("vlim", "term"):
+            vl = float(m.vlim[0])
+            s = torch.tensor([[vl - 1.0, 0.0, 0.0], [vl + 2.0, 0.0, 0.0]], device=mppi.DEV)
+            ey = torch.zeros(2, device=mppi.DEV)
+        elif kind == "slip":
+            s = torch.tensor([[20.0, 0.0, 0.0], [20.0, -4.0, 0.0]], device=mppi.DEV)
+            ey = torch.zeros(2, device=mppi.DEV)
+        else:
+            s = torch.tensor([[20.0, 0.0, 0.0], [20.0, 0.0, 0.0]], device=mppi.DEV)
+            ey = torch.tensor([0.0, -(5.0 - m.off_margin)], device=mppi.DEV)  # 가운데 / 이탈 벌점선
+        c = m._extra(s, ey, half, ix, last=True)
+        assert float(c[0]) == 0.0 and float(c[1]) > 0.0, (kind, c)
+        if kind == "term":
+            assert float(m._extra(s, ey, half, ix, last=False).abs().sum()) == 0.0
+        if kind == "wall":
+            assert abs(float(c[1]) - mppi.W_WALL) < 1e-3
+        if kind == "vlim":
+            assert abs(float(c[1]) - mppi.W_PROG_M * 4.0) < 1e-2
+
+
+def test_b_reward_off_by_default_keeps_cost():
+    """[11/23] rew 없음(기본) = 기존 B 와 같은 비용. 미끄럼이 없는 가짜 모델이면 slip 항을 켜도 비용이 같다."""
+    tr = mppi.Track(TRACK)
+    costs = []
+    for rew in (None, dict(kind="slip", beta_max=0.076)):
+        m = mppi.MPPI(_Toy(), tr, K=64, N=8, seed=0, mode="B", use_graph=False, rew=rew)
+        m.s_now = torch.tensor([20.0, 0.0, 0.0], device=mppi.DEV)
+        pose = torch.tensor([float(tr.x[0]), float(tr.y[0]), float(tr.psi[0])], device=mppi.DEV)
+        hist = torch.tensor([20.0, 0.0, 0.0, 300.0, 0.0, 0.0], device=mppi.DEV).repeat(mppi.H - 1, 1)
+        m.act(hist, pose, 0, torch.tensor([300.0, 0.0], device=mppi.DEV))
+        costs.append(m.bcost.clone())
+    assert torch.equal(costs[0], costs[1])

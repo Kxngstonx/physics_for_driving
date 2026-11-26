@@ -2,10 +2,11 @@
 
 AV21_IAC         : 11/12 IAC 실험에 쓴 값 그대로 (참조용)
 GTI_THUNDERHILL  : 썬더힐 Stanford VW GTI 용 초안 (참조용. 제원 추정 검증에 알려진 값으로 씀)
-GOLF_THUNDERHILL : 본 실험 차량. 제원은 데이터로 추정 (specs.py, experiments/golf/results/specs.json)
+GOLF_THUNDERHILL : 본 실험 차량. [변경 11/21] 차량 값은 deep_dynamics/golf/specs.json (experiments/golf/estimate_specs.py 총괄)
 """
 from dataclasses import replace
 
+from . import golf_specs
 from .ladder import VehicleConfig
 
 # ------------------------------------------------------------ IAC AV-21 (Deep Dynamics 공개 데이터)
@@ -43,26 +44,26 @@ GTI_THUNDERHILL = VehicleConfig(
 )
 
 # ------------------------------------------------------------ VW Golf (Stanford hh613qz0317, Thunderhill West) — 본 실험
-# 제원: experiments/golf/estimate_specs.py → experiments/golf/results/specs.json (11/18)
-#   m 1496.9 kg, 구동계 효율 0.699 : 직진 제동·구동 구간 2단계 회귀 (같은 방법이 GTI 질량을 +5.3% 로 맞춤)
-#   [변경 11/19] 클러치 신호 수정(data.drive_force)과 엔진 브레이크 포함(estimate_specs.two_stage) 뒤 다시 추정. 이전 1444.5 kg, 0.697
-#   축거 2.63 m, 앞 무게 몫 0.61 → lf 1.026, lr 1.604 : 가정 (lf 는 데이터로 정해지지 않음. GTI −20%, AV-21 −52%)
-#   Iz 1797 : lf 고정 회귀값. 초기값으로만 쓰고 학습
-#   Cr0 176 N, Cr2 0.40 : 일반 승용차 값 (굴림 0.012·m·g, 0.5·1.2·0.30·2.2). 초기값으로만 쓰고 학습
-# 타이어 초기값: 정적 축하중 앞 8956 N, 뒤 5729 N × 측정 μ 1.2 → Df 10750, Dr 6870.
-#   B 는 B·C·D 가 회귀한 선형 코너링 강성(앞 82.7, 뒤 72.3 kN/rad)과 맞게: 6.1, 8.4
-# 앞 제동 몫 0.75 [변경 11/19, 이전 0.658]: 20개 파일, 속도 > 5 m/s·네 바퀴 제동력 합 ≥ 2 kN 표본의 중앙값 0.749
-#   (파일별 0.744~0.754). 이전 0.658 은 정차 중(앞뒤 압력이 같음) 표본이 섞인 값이었다 (문서 5-5). lon = Fxf = 0.699·구동력 − 앞 제동력 (N), golf/data.py
+# [변경 11/21] 차량 값은 손으로 적지 않고 deep_dynamics/golf/specs.json 에서 읽는다 (항목별 출처·근거는 그 파일과
+#   docs/experiment_plan_golf.md [결정 11/21]). 질량·무게중심·요 관성 = 공개값(데이터 차량 = Niki 가정), 앞 제동 몫·타이어 = 데이터.
+# 물리 계수 초기값 (학습 시작점, Physics Guard 범위는 그대로):
+#   Df, Dr = 정적 축하중 × Fiala 축별 최대 마찰.  Bf, Br = Fiala 코너링 강성 ÷ (C 1.3 × D)  (B·C·D = 0 근처 기울기)
+#   Iz, Cr0, Cr2 = specs 값.  이전 값(11/20): m 1496.9, lf 1.026 / lr 1.604, Iz 1797, Df 10750 / Dr 6870, Bf 6.1 / Br 8.4
+_v = golf_specs.value
+_m, _a, _b = _v("mass"), _v("cg_a"), _v("cg_b")
+_Fzf, _Fzr = _m * 9.81 * _b / (_a + _b), _m * 9.81 * _a / (_a + _b)
+_Df, _Dr = _Fzf * _v("tire_mu_f"), _Fzr * _v("tire_mu_r")
+_Bf, _Br = _v("tire_stiffness_f") / (1.3 * _Df), _v("tire_stiffness_r") / (1.3 * _Dr)
 GOLF_THUNDERHILL = VehicleConfig(
-    name="GOLF_THUNDERHILL", m=1496.9, lf=1.026, lr=1.604, dt=0.04, hist=8, lon_input="force",
-    brake_front_share=0.75, axle_fmax0=(10750.0, 6870.0),
+    name="GOLF_THUNDERHILL", m=_m, lf=_a, lr=_b, dt=0.04, hist=8, lon_input="force",
+    brake_front_share=_v("brake_front_share"), axle_fmax0=(_Df, _Dr),
     phys=[
-        ("Bf", 6.1, 2.0, 30.0), ("Cf", 1.3, 0.5, 2.0), ("Df", 10750.0, 100.0, 25000.0), ("Ef", -0.5, -2.0, 0.0),
-        ("Br", 8.4, 2.0, 30.0), ("Cr", 1.3, 0.5, 2.0), ("Dr", 6870.0, 100.0, 25000.0), ("Er", -0.5, -2.0, 0.0),
-        ("Cr0", 176.0, 0.0, 2000.0), ("Cr2", 0.40, 0.0, 3.0), ("Iz", 1797.0, 800.0, 4000.0),
+        ("Bf", _Bf, 2.0, 30.0), ("Cf", 1.3, 0.5, 2.0), ("Df", _Df, 100.0, 25000.0), ("Ef", -0.5, -2.0, 0.0),
+        ("Br", _Br, 2.0, 30.0), ("Cr", 1.3, 0.5, 2.0), ("Dr", _Dr, 100.0, 25000.0), ("Er", -0.5, -2.0, 0.0),
+        ("Cr0", _v("resist_cr0"), 0.0, 2000.0), ("Cr2", _v("resist_cr2"), 0.0, 3.0), ("Iz", _v("yaw_inertia"), 800.0, 4000.0),
         ("kb", 0.0, -1.5, 1.5),   # 뱅크 중력 성분 이득 (Golf 데이터 bank_rad 사용)
         ("ds", 0.0, -1.0, 1.0)],
-    note="lon = Fxf (N). 200 Hz → 10 Hz 저역 통과 → 8개마다 1개 (dt 0.04). 제원 추정 근거는 specs.md",
+    note="lon = Fxf (N). 200 Hz → 10 Hz 저역 통과 → 8개마다 1개 (dt 0.04). 차량 값은 deep_dynamics/golf/specs.json",
 )
 
 # [11/19 팀 결정] 경사 입력 (우리 방식): 같은 차량 값 + use_grade. 학습 데이터 u = [Fxf, delta, bank=0, grade]
