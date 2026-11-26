@@ -1,0 +1,45 @@
+{
+ "name": "tum_budapest",
+ "length_m": 4377,
+ "mincurv_opt": null,
+ "width_total_min_median_max": [
+  7.63717101319088,
+  9.963510981387344,
+  16.09808049200634
+ ],
+ "z_range_m": 0.0,
+ "grade_p1_p99_deg": [
+  0.0,
+  0.0
+ ],
+ "source": "TUMFTM racetrack-database (LGPL-3.0): 중앙선 OSM 평활, 폭 위성 이미지, raceline TUM 최소 곡률",
+ "grade": "없음 (0)",
+ "center": {
+  "length_m": 4377.0,
+  "kappa_absmax": 0.0586981637584614,
+  "min_radius_m": 17.036308054114368,
+  "vref_min": 14.161617789399427,
+  "vref_max": 49.36628722109788,
+  "lap_time_profile": 148.23740913552973,
+  "frac_above_data_vmax": 0.35023989033584646,
+  "width_min": 3.3620804870158567
+ },
+ "raceline": {
+  "length_m": 4318.0,
+  "kappa_absmax": 0.03532062324179683,
+  "min_radius_m": 28.312071198580814,
+  "vref_min": 18.256223655227643,
+  "vref_max": 49.55157130503968,
+  "lap_time_profile": 132.31318889701913,
+  "frac_above_data_vmax": 0.4905048633626679,
+  "width_min": 0.5242982488439383
+ },
+ "raceline_margin": {
+  "ours_min": 0.5242982488439383,
+  "ours_p1": 0.7148302768732606,
+  "raw_min": 0.6628338961683715,
+  "raw_p1": 0.7393882012331869,
+  "ours_frac_below_0p9": 0.31542380731820285,
+  "raw_frac_below_0p9": 0.3113425925925926
+ }
+}
